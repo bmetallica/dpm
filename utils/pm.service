@@ -1,0 +1,14 @@
+[Unit]
+Description=Patch Management Node.js Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/patch-management/index.js
+WorkingDirectory=/opt/patch-management/   
+Restart=always
+User=root
+Environment=PORT=3000
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patch Management</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <table id="zustandTable">
+            <thead>
+                <tr>
+                    <th>Server</th>
+                    <th>Debian Version</th>
+                    <th>Zuständig</th>
+                    <th>Possible Updates</th>
+                    <th>Updates</th>
+                    <th>Root Free</th>
+                    <th>Last Run</th>
+                    <th>Action</th>
+                    <th>Kommentar</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Popup-Fenster für den Update-Prozess -->
+    <div id="updatePopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <span id="closePopup" onclick="closePopup()">&times;</span>
+            <h2>Updateprozess</h2>
+            <pre id="updateLog">Verbinde...</pre>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+
+        // Funktion zum Öffnen des Popups
+        function openPopup() {
+            document.getElementById('updatePopup').style.display = 'block';
+        }
+
+        // Funktion zum Schließen des Popups
+        function closePopup() {
+            document.getElementById('updatePopup').style.display = 'none';
+            if (ws) ws.close(); // Schließe die WebSocket-Verbindung
+        }
+
+        // Funktion zum Laden der Zustandsdaten und zum Rendern der Tabelle
+        async function loadZustand() {
+            const response = await fetch('/api/zustand');
+            const zustandList = await response.json();
+            const tableBody = document.querySelector('#zustandTable tbody');
+            tableBody.innerHTML = '';
+
+            zustandList.forEach(row => {
+                const tr = document.createElement('tr');
+                if (parseInt(row.pu) >= 1) tr.classList.add('highlight-row');
+
+                tr.innerHTML = `
+                    <td>${row.server}</td>
+                    <td>${row.sys}</td>
+                    <td>
+                        <textarea onchange="saveText(${row.id}, 'zus', this.value)">${row.zus}</textarea>
+                    </td>
+                    <td>${row.pu}</td>
+                    <td>${formatUpdates(row.ul)}</td>
+                    <td>${row.root_free}</td>
+                    <td>${row.last_run}</td>
+                    <td>${renderAction(row)}</td>
+                    <td>
+                        <textarea onchange="saveText(${row.id}, 'komment', this.value)">${row.komment}</textarea>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        // Funktion zum Speichern von Änderungen in den Feldern "zus" und "komment"
+        async function saveText(id, field, value) {
+            await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, field, value })
+            });
+        }
+
+        // Funktion zur Formatierung der Update-Liste in die gewünschte Darstellung
+        function formatUpdates(updates) {
+            return updates.split('\n').map(update => `<p>${update}</p>`).join('');
+        }
+
+        // Funktion zur Darstellung der Action-Buttons (Update, SSH, Löschen)
+        function renderAction(row) {
+            const ip = row.server;
+            const updatesAvailable = parseInt(row.pu);
+            const inLogFile = row.inLogFile;
+
+            let actionButtons = '';
+
+            if (!inLogFile) {
+                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="executeAction('${ip}', 'connectSSH')">Connect SSH</button></td>`;
+            } else if (inLogFile && updatesAvailable === 0) {
+                actionButtons += '<table id=at><tr><td><span class="connected">✔ ssh connected</span></td>';
+            } else if (inLogFile && updatesAvailable >= 1) {
+                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="updateServer('${ip}')">Update Server</button></td>`;
+            }
+
+            // Server löschen-Button hinzufügen
+            actionButtons += `<td width=20%><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td></tr></table>`;
+
+            return actionButtons;
+        }
+
+        // Funktion zum Löschen eines Servers mit Bestätigung
+        async function deleteServer(id, server) {
+            const confirmation = confirm(`Soll der Server ${server} wirklich entfernt werden?`);
+            if (confirmation) {
+                await fetch('/api/deleteServer', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                loadZustand(); // Tabelle aktualisieren
+            }
+        }
+
+        // Funktion zum Starten des Updateprozesses und zur WebSocket-Verbindung
+        async function updateServer(ip) {
+            openPopup();
+
+            // WebSocket-Verbindung herstellen
+            ws = new WebSocket(`ws://${location.host}`);
+
+            // Beim Öffnen des WebSockets den Updateprozess starten
+            ws.onopen = () => {
+                document.getElementById('updateLog').textContent = `Starte Update auf ${ip}...\n`;
+            };
+
+            // Nachrichten empfangen und im Log anzeigen
+            ws.onmessage = (event) => {
+                document.getElementById('updateLog').textContent += event.data + '\n';
+            };
+
+            // Wenn WebSocket-Verbindung geschlossen wird
+            ws.onclose = () => {
+                document.getElementById('updateLog').textContent += 'Verbindung geschlossen.';
+            };
+
+            // Sende die Update-Anfrage an den Server
+            await fetch('/api/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip, action: 'updateServer' })
+            });
+        }
+
+        // Funktion zum Ausführen einer SSH-Verbindung oder anderer Aktionen
+        async function executeAction(ip, action) {
+            await fetch('/api/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip, action })
+            });
+            loadZustand(); // Tabelle aktualisieren
+        }
+
+        // Initiales Laden der Zustandsdaten
+        loadZustand();
+    </script>
+</body>
+</html>
