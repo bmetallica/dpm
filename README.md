@@ -11,7 +11,7 @@ Ein Debian Server mit SSH, einer im Netzwerk erreichbaren PostgreSQL Datenbank u
 
 Installation:
 
-1. Download nach /opt/ mit "git clone"
+1. Download nach /opt/ mit "git clone https://github.com/bmetallica/dpm.git"
 
 2. "apt install sshpass" 
 
