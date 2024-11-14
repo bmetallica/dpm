@@ -49,6 +49,12 @@
             if (ws) ws.close(); // Schließe die WebSocket-Verbindung
         }
 
+        // Funktion zum automatischen Scrollen nach unten
+        function scrollToBottom() {
+            const log = document.getElementById('updateLog');
+            log.scrollTop = log.scrollHeight;
+        }
+
         // Funktion zum Laden der Zustandsdaten und zum Rendern der Tabelle
         async function loadZustand() {
             const response = await fetch('/api/zustand');
@@ -138,16 +144,21 @@
             // Beim Öffnen des WebSockets den Updateprozess starten
             ws.onopen = () => {
                 document.getElementById('updateLog').textContent = `Starte Update auf ${ip}...\n`;
+                scrollToBottom();  // Sicherstellen, dass wir immer nach unten scrollen
             };
 
             // Nachrichten empfangen und im Log anzeigen
             ws.onmessage = (event) => {
-                document.getElementById('updateLog').textContent += event.data + '\n';
+                const log = document.getElementById('updateLog');
+                log.textContent += event.data + '\n';
+                scrollToBottom();  // Automatisches Scrollen nach unten
             };
 
             // Wenn WebSocket-Verbindung geschlossen wird
             ws.onclose = () => {
-                document.getElementById('updateLog').textContent += 'Verbindung geschlossen.';
+                const log = document.getElementById('updateLog');
+                log.textContent += 'Verbindung geschlossen.';
+                scrollToBottom();  // Nochmals scrollen, wenn die Verbindung geschlossen wird
             };
 
             // Sende die Update-Anfrage an den Server
