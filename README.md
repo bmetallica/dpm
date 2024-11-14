@@ -17,7 +17,7 @@ Installation:
 
 3. SSH Schlüssel als root erstellen: "ssh-keygen"
 
-4. cd /opt/patch-management
+4. cd /opt/dpm/patch-management
 
 5. Nodeprojekt initiieren mit "npm init -y"
 
@@ -39,14 +39,14 @@ CREATE TABLE public.zustand ( id integer NOT NULL DEFAULT nextval('zustand_id_se
 
 10. In der Datei index.js den Benutzernamen und das Passwort der Datenbank anpassen
 
-11. Die Datei /opt/utils/patch.sh auf den "Client-Server" in das Verzeichnis /local/ (falls erforderlich anlegen) kopieren und dort ebenfalls die Datenbankzugangsdaten anpassen
+11. Die Datei /opt/dpm/utils/patch.sh auf den "Client-Server" in das Verzeichnis /local/ (falls erforderlich anlegen) kopieren und dort ebenfalls die Datenbankzugangsdaten anpassen
 
 12. Auf dem "Client-Server" einen cronjob erstellen um die Datei patch.sh regelmäßig auszuführen
 
 
 Erstellen eines Dienstes zum Starten des Patchmanagement
 
-1. "mv /opt/utils/pm.service /etc/systemd/system/"
+1. "mv /opt/dpm/utils/pm.service /etc/systemd/system/"
 
 2. "chmod 777 /etc/systemd/system/pm.service"
 
