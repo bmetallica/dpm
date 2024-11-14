@@ -58,6 +58,6 @@ Erstellen eines Dienstes zum Starten des Patchmanagement
 5. autostart
 systemctl enable pm
 
-Das Webinterfache sollte dann im Browser unter http://localhost:3000 erreichbar sein
+Das Webinterfache sollte dann im Browser unter http://localhost:3000 erreichbar sein (Der Port kann in der Datei index.js eingestellt werden).
 
 Viel Spaß mit diesem Projekt
