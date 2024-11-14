@@ -3,8 +3,8 @@ Description=Patch Management Node.js Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/node /opt/patch-management/index.js
-WorkingDirectory=/opt/patch-management/   
+ExecStart=/usr/bin/node /opt/dpm/patch-management/index.js
+WorkingDirectory=/opt/dpm/patch-management/   
 Restart=always
 User=root
 Environment=PORT=3000
