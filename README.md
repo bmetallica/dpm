@@ -3,6 +3,9 @@ simple central debian patchmanagement
 
 Es handelt sich um ein kleines zentrales Patchmanagement für Debian Server im geschützten Homelab.
 
+![Alternativtext](https://github.com/bmetallica/dpm/blob/main/utils/sc.png)
+
+
 Voraussetzungen:
 Ein Debian Server mit SSH, einer im Netzwerk erreichbaren PostgreSQL Datenbank und NodeJS incl. npm.
 
