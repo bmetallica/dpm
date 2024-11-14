@@ -163,6 +163,7 @@
                 const log = document.getElementById('updateLog');
                 log.textContent += 'Verbindung geschlossen.';
                 scrollToBottom();  // Nochmals scrollen, wenn die Verbindung geschlossen wird
+                location.reload();
             };
 
             // Sende die Update-Anfrage an den Server
