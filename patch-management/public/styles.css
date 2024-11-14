@@ -125,6 +125,7 @@ pre {
 .del-button {
     float: right;
     width: 100%;
+    max-width: 100px;
     padding: 12px 20px;
     background: none;               /* Entfernt den Hintergrund des Buttons */
     border: 3px;                   /* Entfernt den Standard-Rahmen des Buttons */
