@@ -8,6 +8,7 @@ Es handelt sich um ein kleines zentrales Patchmanagement für Debian Server im g
 
 Voraussetzungen:
 Ein Debian Server mit SSH, einer im Netzwerk erreichbaren PostgreSQL Datenbank und NodeJS incl. npm.
+Alle "Client-Server" haben einen Benutzer mit den notwendigen Berechtigungen für apt und SSH Zugang (muss in der Datei ssh.conf eingetragen werden).
 
 Installation:
 
