@@ -198,7 +198,7 @@ function execUpdateWithProgress(ip) {
             // Wenn das zweite Kommando abgeschlossen ist, sende eine Abschlussmeldung
             wss.clients.forEach(client => {
                 if (client.readyState === WebSocket.OPEN) {
-                    client.send(`patch.sh abgeschlossen mit Code: ${code}`);
+                    client.send(`patch.sh auf ${ip} abgeschlossen mit Code: ${code}`);
                 }
             });
         });
