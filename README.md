@@ -25,7 +25,7 @@ Installation:
 
 7. Eine PostgreSQL Datenbank mit dem Namen "apt" anlegen
 
-8. mit psql in der Datenbank die Tabelle anlegen:
+8. Mit psql in der Datenbank die Tabelle anlegen:
 CREATE SEQUENCE public.zustand_id_seq
     START WITH 1
     INCREMENT BY 1
