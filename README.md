@@ -54,5 +54,6 @@ Erstellen eines Dienstes zum Starten des Patchmanagement
 5. autostart
 systemctl enable pm
 
+Das Webinterfache sollte dann im Browser unter http://localhost:3000 erreichbar sein
 
 Viel Spaß mit diesem Projekt
