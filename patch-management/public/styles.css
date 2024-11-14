@@ -136,7 +136,7 @@ pre {
     width: 100%;                    /* Bild passt sich an die Breite des Buttons an */
     height: auto;                   /* Höhe wird proportional zur Breite angepasst */
 }
-   
+
 #at {
     width: 100%;
     /*border-collapse: collapse;*/
@@ -147,4 +147,12 @@ pre {
 
 #at td, #meineTabelle th {
     border: none; /* Entfernt die Rahmen der Tabellenzellen */
+}
+#updateLog {
+    max-height: 300px; /* Höhe des Logs begrenzen */
+    overflow-y: auto; /* Ermöglicht Scrollen im Log */
+    background-color: #222;
+    padding: 15px;
+    border-radius: 8px;
+    color: #ddd;
 }
