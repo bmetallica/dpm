@@ -75,7 +75,7 @@
                     <td>${row.pu}</td>
                     <td>${formatUpdates(row.ul)}</td>
                     <td>${row.root_free}</td>
-                    <td>${row.last_run}</td>
+                    <td>${formatdate(row.last_run)}</td>
                     <td>${renderAction(row)}</td>
                     <td>
                         <textarea onchange="saveText(${row.id}, 'komment', this.value)">${row.komment}</textarea>
@@ -97,6 +97,10 @@
         // Funktion zur Formatierung der Update-Liste in die gewünschte Darstellung
         function formatUpdates(updates) {
             return updates.split('\n').map(update => `<p>${update}</p>`).join('');
+        }
+        // Funktion zur Formatierung des last_run in die gewünschte Darstellung
+        function formatdate(last_run) {
+            return last_run.split('.')[0].replace('T', ' ');
         }
 
         // Funktion zur Darstellung der Action-Buttons (Update, SSH, Löschen)
