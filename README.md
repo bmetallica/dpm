@@ -1,32 +1,59 @@
-# dpm
-simple central debian patchmanagement
+# 🛠️ DPM – Debian Patch Management
 
-Es handelt sich um ein kleines zentrales Patchmanagement für Debian Server im geschützten Homelab.
+Ein simples, zentrales Patchmanagement-System für Debian-Server im geschützten Homelab.
 
-![Alternativtext](https://github.com/bmetallica/dpm/blob/main/utils/sc.png)
+![DPM Screenshot](https://github.com/bmetallica/dpm/blob/main/utils/sc.png)
 
+---
 
-Voraussetzungen:
-Ein Debian Server mit SSH, eine im Netzwerk erreichbare PostgreSQL Datenbank und NodeJS incl. npm.
-Alle "Client-Server" haben einen Benutzer mit den notwendigen Berechtigungen für apt und SSH Zugang (muss in der Datei ssh.conf eingetragen werden).
+## 🚀 Voraussetzungen
 
-Installation:
+- Debian-Server mit **SSH**
+- Im Netzwerk erreichbare **PostgreSQL-Datenbank**
+- Installiertes **Node.js** inkl. `npm`
+- Auf allen Zielsystemen:
+  - Ein Benutzer mit APT-Rechten und SSH-Zugang
+  - Eintrag in der Datei `ssh.conf`
 
-1. Download nach /opt/ mit "git clone https://github.com/bmetallica/dpm.git"
+---
 
-2. "apt install sshpass" 
+## 📦 Installation
 
-3. SSH Schlüssel als root erstellen: "ssh-keygen"
+### 1. Code herunterladen
 
-4. cd /opt/dpm/patch-management
+```bash
+cd /opt/
+git clone https://github.com/bmetallica/dpm.git
+```
 
-5. Nodeprojekt initiieren mit "npm init -y"
+### 2. `sshpass` installieren
 
-6. Abhängigkeiten installieren mit "npm install express pg body-parser ws"
+```bash
+apt install sshpass
+```
 
-7. Eine PostgreSQL Datenbank mit dem Namen "apt" anlegen
+### 3. SSH-Schlüssel erstellen (als root)
 
-8. Mit psql in der Datenbank die Tabelle anlegen:
+```bash
+ssh-keygen
+```
+
+### 4. Projekt vorbereiten
+
+```bash
+cd /opt/dpm/patch-management
+npm init -y
+npm install express pg body-parser ws
+```
+
+---
+
+## 🗄️ PostgreSQL vorbereiten
+
+1. Datenbank mit dem Namen `apt` anlegen.
+2. Mit `psql` folgende SQL-Befehle ausführen:
+
+```sql
 CREATE SEQUENCE public.zustand_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -34,30 +61,78 @@ CREATE SEQUENCE public.zustand_id_seq
     NO MAXVALUE
     CACHE 1;
 
-CREATE TABLE public.zustand ( id integer NOT NULL DEFAULT nextval('zustand_id_seq'::regclass), server character varying(15) COLLATE pg_catalog."default" NOT NULL, sys character varying(255) COLLATE pg_catalog."default" NOT NULL, pu character varying(3) COLLATE pg_catalog."default" NOT NULL, ul text COLLATE pg_catalog."default", root_free character varying(10) COLLATE pg_catalog."default" NOT NULL, last_run timestamp without time zone NOT NULL, zus character varying(255) COLLATE pg_catalog."default", komment character varying(255) COLLATE pg_catalog."default", CONSTRAINT zustand_pkey PRIMARY KEY (id), CONSTRAINT zustand_server_key UNIQUE (server) ) WITH ( OIDS = FALSE ) TABLESPACE pg_default;
+CREATE TABLE public.zustand (
+    id integer NOT NULL DEFAULT nextval('zustand_id_seq'::regclass),
+    server character varying(15) NOT NULL,
+    sys character varying(255) NOT NULL,
+    pu character varying(3) NOT NULL,
+    ul text,
+    root_free character varying(10) NOT NULL,
+    last_run timestamp NOT NULL,
+    zus character varying(255),
+    komment character varying(255),
+    CONSTRAINT zustand_pkey PRIMARY KEY (id),
+    CONSTRAINT zustand_server_key UNIQUE (server)
+);
+```
 
-9. In der Datei ssh.conf den Benutzernamen und das Passwort des Users für den Remotezugriff auf die "Client-Server" eintragen.
+---
 
-10. In der Datei index.js den Benutzernamen und das Passwort der Datenbank anpassen
+## 🔧 Konfiguration
 
-11. Die Datei /opt/dpm/utils/patch.sh auf den "Client-Server" in das Verzeichnis /local/ (falls erforderlich anlegen) kopieren und dort ebenfalls die Datenbankzugangsdaten anpassen
+### 1. SSH-Zugang konfigurieren
 
-12. Auf dem "Client-Server" einen cronjob erstellen um die Datei patch.sh regelmäßig auszuführen
+Datei `ssh.conf` anpassen:
 
+```conf
+benutzername
+passwort
+```
 
-Erstellen eines Dienstes zum Starten des Patchmanagement
+### 2. Datenbank-Zugangsdaten in `index.js` eintragen.
 
-1. "mv /opt/dpm/utils/pm.service /etc/systemd/system/"
+### 3. `patch.sh` auf den Zielsystemen einrichten
 
-2. "chmod 777 /etc/systemd/system/pm.service"
+- Datei `/opt/dpm/utils/patch.sh` nach `/local/` auf dem Zielserver kopieren
+- In `patch.sh` die Datenbank-Zugangsdaten anpassen
+- Cronjob zum regelmäßigen Ausführen einrichten:
 
-3. "systemctl daemon-reload"
+```bash
+crontab -e
+```
 
-4. "systemctl start pm"
+```cron
+0 * * * * /local/patch.sh
+```
 
-5. autostart
+---
+
+## 🔄 Systemd-Dienst einrichten
+
+```bash
+mv /opt/dpm/utils/pm.service /etc/systemd/system/
+chmod 755 /etc/systemd/system/pm.service
+systemctl daemon-reload
+systemctl start pm
 systemctl enable pm
+```
 
-Das Webinterfache sollte dann im Browser unter http://localhost:3000 erreichbar sein (Der Port kann in der Datei index.js eingestellt werden).
+---
 
-Viel Spaß mit diesem Projekt
+## 🌐 Zugriff
+
+Das Webinterface ist danach erreichbar unter:
+
+```
+http://localhost:3000
+```
+
+(Der Port kann in der Datei `index.js` angepasst werden.)
+
+---
+
+## 🎉 Viel Spaß mit diesem Projekt!
+
+---
+
+**Autor:** [bmetallica](https://github.com/bmetallica)
