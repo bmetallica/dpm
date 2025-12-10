@@ -1,14 +1,23 @@
-// index.js
+// index.js (Vollständige Version mit Cron-Jobs, Datenabruf und allen Endpunkten)
+
 const express = require('express');
 const { Pool } = require('pg');
-const bodyParser = require('body-parser');
 const fs = require('fs');
 const { exec } = require('child_process');
 const WebSocket = require('ws');
 const path = require('path');
+const cron = require('node-cron');
+const crypto = require('crypto'); // Für zufällige Passwörter
+
+const session = require('express-session');
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 const app = express();
-const port = 3000;
+const port = 3030;
+
+const GLOBAL_TIMEZONE = 'Europe/Berlin';
+const GLOBAL_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'; // Standardformat
 
 // PostgreSQL-Verbindung einrichten
 const pool = new Pool({
@@ -19,43 +28,553 @@ const pool = new Pool({
     port: 5432
 });
 
-    let sshuser = '';
-    let sshpass = '';
+
+let sshuser = '';
+let sshpass = '';
+const cronJobs = {};
 
 // Pfad zur Datei ssh.conf
 const filePath = path.join(__dirname, 'ssh.conf');
 
-// Funktion zum Lesen und Verarbeiten der Datei
-fs.readFile(filePath, 'utf8', (err, data) => {
-    if (err) {
-        return console.error('Fehler beim Lesen der Datei:', err);
+// --- HILFSFUNKTIONEN FÜR AUTHENTIFIZIERUNG UND BEREINIGUNG (VOR MIDDLEWARE DEFINIEREN) ---
+
+/**
+ * Erstellt den initialen Admin-Benutzer, falls dieser noch nicht existiert.
+ */
+async function initializeAdminUser() {
+    const adminUsername = 'admin';
+    const adminPassword = 'admin';
+
+    try {
+        const checkUser = await pool.query('SELECT * FROM users WHERE username = $1', [adminUsername]);
+
+        if (checkUser.rows.length === 0) {
+            const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+            await pool.query(
+                'INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, TRUE)',
+                             [adminUsername, passwordHash]
+            );
+            console.log(`[AUTH] Initialer Admin-Benutzer '${adminUsername}' erstellt.`);
+        } else {
+            console.log(`[AUTH] Admin-Benutzer '${adminUsername}' existiert bereits.`);
+        }
+    } catch (error) {
+        console.error('FEHLER beim Initialisieren des Admin-Benutzers:', error);
     }
-    
-    // Zeilenweise aufteilen
-    const lines = data.split('\n');
-    
-    // Durch die Zeilen gehen und die Werte extrahieren
-    lines.forEach(line => {
-        if (line.startsWith('user:')) {
-            sshuser = line.split(':')[1].replace(/"/g, '').trim();
-        } else if (line.startsWith('password:')) {
-            sshpass = line.split(':')[1].replace(/"/g, '').trim();
+}
+
+/**
+ * Middleware: Prüft, ob der Benutzer eingeloggt ist.
+ */
+function requireLogin(req, res, next) {
+    // 1. ZULÄSSIGE, NICHT GESCHÜTZTE PFADE definieren:
+    if (
+        req.path === '/api/login' ||
+        req.path.startsWith('/api/bootstrap/') ||
+        req.path === '/login.html' ||
+        req.path === '/' ||
+        req.path === '/index.html' // <<< SICHERHEITSHALBER HINZUFÜGEN
+    ) {
+        return next();
+    }
+
+    // 2. Prüft, ob der Benutzer eine aktive Session hat
+    if (req.session && req.session.userId) {
+        return next();
+    }
+
+    // 3. Wenn nicht eingeloggt und nicht auf einem erlaubten Pfad: Umleiten
+    if (req.path.startsWith('/api/')) {
+        return res.status(401).json({ error: 'Nicht authentifiziert.' });
+    }
+
+    // Für alle anderen Routen (Frontend-Ressourcen) zur Anmeldeseite weiterleiten
+    res.redirect('/login.html');
+}
+
+
+
+
+
+/**
+ * Middleware: Prüft, ob der Benutzer Administrator ist.
+ */
+function requireAdmin(req, res, next) {
+    // req.session.isAdmin muss durch requireLogin gesetzt worden sein
+    if (req.session.isAdmin) {
+        next(); // Admin ist berechtigt
+    } else {
+        // 403 Forbidden
+        console.warn(`Zugriff verweigert: Benutzer ${req.session.username} ist kein Admin.`);
+        res.status(403).json({ success: false, message: 'Zugriff nur für Administratoren.' });
+    }
+}
+
+// ----------------------------------------------------------------------
+// --- EXPRESS MIDDLEWARE KONFIGURATION (KRITISCHE REIHENFOLGE) ---
+// ----------------------------------------------------------------------
+
+// 1. Session-Middleware
+app.use(session({
+    secret: 'ein-sehr-geheimes-zufallspasswort-oder-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+}));
+
+// 2. Body Parser (Muss VOR ALLEN ROUTEN stehen, die req.body verwenden!)
+app.use(express.json()); // Nutze den Express-internen Body-Parser
+app.use(express.urlencoded({ extended: true })); // Optional, falls Form-Daten gesendet werden
+
+// 3. Statische Dateien (Muss VOR requireLogin stehen, um Assets zu laden)
+app.use(express.static('public'));
+
+// 4. Login-Prüfung (Schützt alle nachfolgenden Routen)
+app.use(requireLogin);
+
+// ----------------------------------------------------------------------
+// --- ENDE MIDDLEWARE ---
+// ----------------------------------------------------------------------
+
+// --- CRON-SCHEDULER UND SSH HILFSFUNKTIONEN (VOR ENDPUNKTEN) ---
+
+function getCronString(type, time) {
+    if (type === 'hourly') {
+        return '0 * * * *';
+    }
+    if (type === 'daily' && time) {
+        const [hour, minute] = time.split(':');
+        return `${minute} ${hour} * * *`;
+    }
+    if (type === 'weekly' && time) {
+        const [hour, minute] = time.split(':');
+        return `${minute} ${hour} * * 0`;
+    }
+    return null;
+}
+
+async function startScheduler() {
+    console.log('Starte Patch-Management Scheduler...');
+    for (const ip in cronJobs) {
+        cronJobs[ip].stop();
+        delete cronJobs[ip];
+    }
+    try {
+        const result = await pool.query('SELECT server, schedule_type, schedule_time FROM zustand WHERE schedule_type IS NOT NULL');
+        result.rows.forEach(row => {
+            const cronString = getCronString(row.schedule_type, row.schedule_time);
+            if (cronString) {
+                console.log(`[CRON] Plane ${row.server} (${row.schedule_type}) mit Cron: ${cronString}`);
+                const job = cron.schedule(cronString, () => {
+                    runDataCollection(row.server);
+                }, {
+                    scheduled: true,
+                    timezone: 'Europe/Berlin'
+                });
+                cronJobs[row.server] = job;
+            }
+        });
+    } catch (error) {
+        console.error('Fehler beim Starten des Schedulers:', error);
+    }
+}
+
+function restartScheduler() {
+    startScheduler();
+}
+
+const runSSH = (ip, command, useSudo = false) => {
+    const cleanCommand = command.replace(/\s/g, ' ').trim();
+    const escapedCommand = cleanCommand
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/\$/g, '\\$');
+
+    const fullCommand = `ssh ${sshuser}@${ip} "${useSudo ? 'sudo ' : ''}${escapedCommand}"`;
+
+    console.log(`[SSH-DEBUG] Führe aus: ${fullCommand}`);
+
+    return new Promise((resolve, reject) => {
+        exec(fullCommand, { timeout: 10000 }, (error, stdout, stderr) => {
+            if (error) {
+                const exitCode = error.code !== undefined ? `Exit Code: ${error.code}` : '';
+                const signal = error.signal ? `Signal: ${error.signal}` : '';
+                const errorMessage = `SSH Fehler für [${cleanCommand}]. Stderr: ${stderr.trim()}. Stdout: ${stdout.trim()}. Error: ${error.message} (${exitCode} ${signal})`;
+                console.error(`[SSH-FEHLER] ${errorMessage}`);
+                return reject(new Error(errorMessage));
+            }
+            resolve(stdout.trim());
+        });
+    });
+};
+
+async function collectDataViaSSH(ip) {
+    const data = {
+        server: ip,
+        sys: 'N/A',
+        pu: 0,
+        ul: '',
+        root_free: 'N/A'
+    };
+
+    try {
+        await runSSH(ip, 'apt update', true).catch(e => console.log(`[WARN] apt update auf ${ip} fehlgeschlagen: ${e.message}`));
+        data.sys = await runSSH(ip, 'lsb_release -ds').catch(() => 'Unbekanntes System');
+        data.root_free = await runSSH(ip, "df -h / | tail -n 1 | awk '{print $4}'").catch(() => 'N/A');
+        const updateOutputRaw = await runSSH(ip, 'apt list --upgradable', true).catch(() => '');
+
+        let updateList = [];
+        if (updateOutputRaw) {
+            const lines = updateOutputRaw.split('\n');
+            updateList = lines.filter(line => {
+                const trimmed = line.trim();
+                if (trimmed.length === 0) return false;
+                if (trimmed.startsWith('Listing') || trimmed.startsWith('Auflistung')) return false;
+                return true;
+            });
+        }
+        data.ul = updateList.join('\n');
+        data.pu = updateList.length;
+        data.server = ip;
+        return data;
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function insertOrUpdateData(data) {
+    const { server, sys, pu, ul, root_free } = data;
+    const current_datetime = new Date().toISOString();
+
+    const query = `
+    INSERT INTO zustand (server, sys, pu, ul, root_free, last_run)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (server)
+    DO UPDATE SET
+    sys=$2,
+    pu=$3,
+    ul=$4,
+    root_free=$5,
+    last_run=$6;
+    `;
+    console.log(current_datetime);
+    await pool.query(query, [server, sys, pu, ul, root_free, current_datetime]);
+}
+
+function sanitizeData(obj) {
+    if (typeof obj !== 'object' || obj === null) {
+        return obj;
+    }
+    for (const key in obj) {
+        if (!obj.hasOwnProperty(key)) {
+            continue;
+        }
+        const value = obj[key];
+        if (typeof value === 'string') {
+            obj[key] = value.replace(/[\u00A0\uFEFF]/g, ' ').trim();
+        } else if (typeof value === 'object' && value !== null) {
+            obj[key] = sanitizeData(value);
+        }
+    }
+    return obj;
+}
+
+async function runDataCollection(ip) {
+    console.log(`[CRON] Starte Datensammlung für ${ip}`);
+    try {
+        const data = await collectDataViaSSH(ip);
+        const sanitizedData = sanitizeData(data);
+        await insertOrUpdateData(sanitizedData);
+        console.log(`[CRON] Datensammlung für ${ip} erfolgreich.`);
+    } catch (error) {
+        console.error(`[CRON] FEHLER bei Datensammlung für ${ip}: ${error.message}`);
+    }
+}
+
+function checkIpInLogFile(ip) {
+    try {
+        const logData = fs.readFileSync('idlist.log', 'utf8');
+        const logEntries = logData.split('\n').map(entry => entry.trim()).filter(line => line.length > 0);
+        return logEntries.includes(ip);
+    } catch (error) {
+        return false;
+    }
+}
+
+// --- AKTIONEN MIT PROGRESS (WEBSOCKETS) ---
+
+function execSelectedUpdateWithProgress(ip, packages) {
+    const packageList = packages.join(' ');
+    const installCommand = `ssh ${sshuser}@${ip} 'sudo apt install -y ${packageList}'`;
+
+    // ... (WebSocket-Logik bleibt gleich)
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(`Starte gezieltes Update auf ${ip} für Pakete: ${packageList.substring(0, 100)}...`);
         }
     });
-    const sshuserx = sshuser;
-    const sshpassx = sshpass;
-    // Ausgabe der Variablen
-    //console.log('sshuser:', sshuserx);
-    //console.log('sshpass:', sshpass);
+
+    const process1 = exec(installCommand);
+
+    process1.stdout.on('data', (data) => {
+        wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`sudo apt install: ${data.toString()}`); });
+    });
+
+    process1.stderr.on('data', (data) => {
+        wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`Fehler bei apt install: ${data.toString()}`); });
+    });
+
+    // NEUE LOGIK: Nach Abschluss der Installation
+    process1.on('close', async (code) => {
+        if (code === 0) {
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[SYSTEM] apt install abgeschlossen mit Code ${code}. Starte Aktualisierung des Systemzustands...`); });
+
+            try {
+                // Führe die Datensammlung asynchron aus
+                await runDataCollection(ip);
+                wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FINISH] Systemzustand erfolgreich neu erfasst. Tabelle kann aktualisiert werden.`); });
+            } catch (e) {
+                console.error(`Fehler bei erneuter Datensammlung für ${ip}:`, e);
+                wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FEHLER] Datensammlung nach Update fehlgeschlagen: ${e.message}`); });
+            }
+        } else {
+            // Fehlerfall
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FEHLER] apt install fehlgeschlagen mit Exit Code: ${code}.`); });
+        }
+    });
+}
+
+
+function execUpdateWithProgress(ip) {
+    const upgradeCommand = `ssh ${sshuser}@${ip} 'sudo apt upgrade -y'`;
+
+    const process1 = exec(upgradeCommand);
+
+    process1.stdout.on('data', (data) => {
+        wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`sudo apt upgrade: ${data.toString()}`); });
+    });
+
+    process1.stderr.on('data', (data) => {
+        wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`Fehler bei apt upgrade: ${data.toString()}`); });
+    });
+
+    // NEUE LOGIK: Nach Abschluss des Upgrades
+    process1.on('close', async (code) => {
+        if (code === 0) {
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[SYSTEM] apt upgrade abgeschlossen mit Code ${code}. Starte Aktualisierung des Systemzustands...`); });
+
+            try {
+                // Führe die Datensammlung asynchron aus
+                await runDataCollection(ip);
+                wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FINISH] Systemzustand erfolgreich neu erfasst. Tabelle kann aktualisiert werden.`); });
+            } catch (e) {
+                console.error(`Fehler bei erneuter Datensammlung für ${ip}:`, e);
+                wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FEHLER] Datensammlung nach Upgrade fehlgeschlagen: ${e.message}`); });
+            }
+        } else {
+            // Fehlerfall
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[FEHLER] apt upgrade fehlgeschlagen mit Exit Code: ${code}.`); });
+        }
+    });
+}
+
+
+// ----------------------------------------------------------------------
+// --- ENDPUNKTE (ROUTING) ---
+// ----------------------------------------------------------------------
+
+// --- ÖFFENTLICHE ENDPUNKTE (Kein requireLogin, da von Middleware ausgeschlossen) ---
+
+app.get('/api/bootstrap/grund.sh', (req, res) => {
+    const scriptPath = path.join(__dirname, 'public', 'grund.sh');
+    res.setHeader('Content-Type', 'text/x-shellscript');
+    fs.createReadStream(scriptPath)
+    .on('error', (err) => {
+        console.error('Fehler beim Ausliefern von grund.sh:', err);
+        res.status(404).send('# Fehler: Skript nicht gefunden');
+    })
+    .pipe(res);
+});
+
+app.get('/api/config', (req, res) => {
+    const serverUrl = `${req.protocol}://${req.get('host')}`;
+    const bootstrapUrl = `${serverUrl}/api/bootstrap/grund.sh`;
+    const curlCommand = `curl -sS ${bootstrapUrl} | sudo bash`;
+    res.json({
+        curlCommand: curlCommand
+    });
+});
+
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body; // Jetzt funktioniert req.body!
+
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Benutzername oder Passwort falsch.' });
+        }
+        const user = result.rows[0];
+        const passwordMatch = await bcrypt.compare(password, user.password_hash);
+        if (!passwordMatch) {
+            return res.status(401).json({ error: 'Benutzername oder Passwort falsch.' });
+        }
+
+        // Bei erfolgreichem Login: Session-Daten setzen und Cookie im Browser speichern
+        req.session.userId = user.id;
+        req.session.username = user.username;
+        req.session.isAdmin = user.is_admin;
+        // Setze Cookies, die das Frontend für die Initialisierung nutzen kann
+        res.cookie('username', user.username, { maxAge: 24 * 60 * 60 * 1000, httpOnly: false });
+        res.cookie('isAdmin', user.is_admin, { maxAge: 24 * 60 * 60 * 1000, httpOnly: false });
+
+        res.json({ success: true, username: user.username, isAdmin: user.is_admin });
+
+    } catch (error) {
+        console.error('Login-Fehler:', error);
+        res.status(500).json({ error: 'Interner Serverfehler.' });
+    }
 });
 
 
-app.use(bodyParser.json());
-app.use(express.static('public'));
+app.get('/api/status', (req, res) => {
+    // Session ist hier garantiert geladen, weil requireLogin davor ausgeführt wurde.
+    // req.session ist garantiert NICHT undefined, da requireLogin sonst umgeleitet hätte.
+    res.json({
+        loggedIn: true,
+        username: req.session.username,
+        isAdmin: req.session.isAdmin
+    });
+});
+
+// --- GESCHÜTZTE ENDPUNKTE (requireLogin greift hier) ---
+
+app.post('/api/logout', (req, res) => {
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).json({ error: 'Logout fehlgeschlagen.' });
+        }
+        res.clearCookie('connect.sid');
+        res.clearCookie('username');
+        res.clearCookie('isAdmin');
+        res.json({ success: true });
+    });
+});
+
+app.post('/api/changePassword', async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.session.userId;
+
+    if (!userId) {
+        return res.status(401).json({ error: 'Nicht authentifiziert.' });
+    }
+
+    try {
+        const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+        const user = result.rows[0];
+
+        const passwordMatch = await bcrypt.compare(oldPassword, user.password_hash);
+        if (!passwordMatch) {
+            return res.status(401).json({ error: 'Altes Passwort falsch.' });
+        }
+
+        const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPasswordHash, userId]);
+
+        res.json({ success: true, message: 'Passwort erfolgreich geändert.' });
+
+    } catch (error) {
+        console.error('Passwortänderungsfehler:', error);
+        res.status(500).json({ error: 'Interner Serverfehler.' });
+    }
+});
+
+
+// --- ADMIN ENDPUNKTE ---
+
+app.post('/api/admin/addUser', requireAdmin, async (req, res) => {
+    const { username, password, isAdmin } = req.body;
+    try {
+        const passwordHash = await bcrypt.hash(password, saltRounds);
+        await pool.query(
+            'INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, $3)',
+                         [username, passwordHash, isAdmin || false]
+        );
+        res.json({ success: true, message: `Benutzer ${username} erfolgreich erstellt.` });
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ error: 'Benutzername existiert bereits.' });
+        }
+        console.error('Benutzer-Hinzufügen-Fehler:', error);
+        res.status(500).json({ error: 'Fehler beim Hinzufügen des Benutzers.' });
+    }
+});
+
+app.post('/api/admin/resetPassword', requireAdmin, async (req, res) => {
+    const { userId, newPassword } = req.body;
+    try {
+        const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, userId]);
+        res.json({ success: true, message: `Passwort für Benutzer ${userId} erfolgreich zurückgesetzt.` });
+    } catch (error) {
+        console.error('Passwort-Reset-Fehler:', error);
+        res.status(500).json({ error: 'Fehler beim Zurücksetzen des Passworts.' });
+    }
+});
+
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, username, is_admin FROM users ORDER BY id');
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Benutzerliste-Fehler:', error);
+        res.status(500).json({ error: 'Fehler beim Abrufen der Benutzerliste.' });
+    }
+});
+
+// --- SERVER-MANAGEMENT ENDPUNKTE ---
+
+app.post('/api/addServer', async (req, res) => {
+    const { ip } = req.body;
+    try {
+        const query = `
+        INSERT INTO zustand (server, sys, pu, ul, root_free, last_run)
+        VALUES ($1, 'N/A', 0, '', 'N/A', NOW())
+        ON CONFLICT (server) DO NOTHING
+        RETURNING id;
+        `;
+        const result = await pool.query(query, [ip]);
+
+        if (result.rowCount === 0) {
+            return res.status(409).json({ error: 'Server existiert bereits.' });
+        }
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Fehler beim Hinzufügen des Servers.' });
+    }
+});
+
+app.post('/api/schedule', async (req, res) => {
+    const { id, type, time } = req.body;
+    try {
+        await pool.query('UPDATE zustand SET schedule_type = $1, schedule_time = $2 WHERE id = $3', [type, time, id]);
+        restartScheduler();
+        res.json({ success: true });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Fehler beim Speichern des Zeitplans.' });
+    }
+});
 
 app.delete('/api/deleteServer', async (req, res) => {
     const { id } = req.body;
     try {
+        const result = await pool.query('SELECT server FROM zustand WHERE id = $1', [id]);
+        if (result.rows.length > 0 && cronJobs[result.rows[0].server]) {
+            cronJobs[result.rows[0].server].stop();
+            delete cronJobs[result.rows[0].server];
+        }
+
         await pool.query('DELETE FROM zustand WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (error) {
@@ -64,46 +583,139 @@ app.delete('/api/deleteServer', async (req, res) => {
     }
 });
 
-// WebSocket-Server initialisieren
-const wss = new WebSocket.Server({ noServer: true });
+// index.js (Ersetzt den Endpunkt app.get('/api/zustand', ...))
 
-// Hilfsfunktion zum Überprüfen, ob eine IP in der idlist.log-Datei vorhanden ist
-function checkIpInLogFile(ip) {
-    try {
-        const logData = fs.readFileSync('idlist.log', 'utf8');
-        const logEntries = logData.split('\n').map(entry => entry.trim());
-        return logEntries.includes(ip);
-    } catch (error) {
-        console.error('Fehler beim Lesen der idlist.log-Datei:', error);
-        return false;
-    }
-}
+// index.js (Ersetzt den Endpunkt app.get('/api/zustand', ...))
 
-// Endpunkt zum Abrufen der Zustände, sortiert nach dem letzten Oktett der IP
 app.get('/api/zustand', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT *
-            FROM zustand
-            ORDER BY
-                CAST(SPLIT_PART(server, '.', 4) AS INTEGER)
+        SELECT
+        server, sys, pu, ul, root_free, schedule_type, schedule_time, id,
+        to_char(last_run AT TIME ZONE '${GLOBAL_TIMEZONE}', '${GLOBAL_DATE_FORMAT}') AS last_run_local
+        FROM zustand
+        ORDER BY
+        CAST(SPLIT_PART(server, '.', 4) AS INTEGER)
         `);
-
         const zustandList = result.rows.map(row => {
             return {
                 ...row,
-                inLogFile: checkIpInLogFile(row.server)
-            };
-        });
+                inLogFile: checkIpInLogFile(row.server),
+                last_run: row.last_run_local
+                    };
+            });
+
 
         res.json(zustandList);
-    } catch (error) {
+        } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Fehler beim Abrufen der Daten.' });
+
+    }
+
+});
+
+
+
+
+app.get('/api/users', requireAdmin, async (req, res) => {
+    try {
+        // ANPASSUNG: PostgreSQL Syntax (pool.query)
+        const result = await pool.query('SELECT id, username, is_admin FROM users ORDER BY id');
+        // PostgreSQL liefert Daten in result.rows
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Fehler beim Abrufen der Benutzer:', error);
+        res.status(500).json({ success: false, message: 'Interner Serverfehler.' });
     }
 });
 
-// Endpunkt zum Speichern eines Freitextes in der Spalte "zus" oder "komment"
+
+app.post('/api/createUser', requireAdmin, async (req, res) => {
+    const { username, password, isAdmin } = req.body;
+
+    if (!username || !password || password.length < 6) {
+        return res.status(400).json({ success: false, message: 'Ungültige Eingabe.' });
+    }
+
+    try {
+        // 1. Prüfen, ob der Benutzername bereits existiert
+        // ANPASSUNG: PostgreSQL Syntax und pool.query
+        const existingUserResult = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+        if (existingUserResult.rows.length > 0) { // PostgreSQL prüft rows.length
+            return res.status(409).json({ success: false, message: 'Benutzername existiert bereits.' });
+        }
+
+        const passwordHash = await bcrypt.hash(password, saltRounds); // Verwende saltRounds
+        const isAdminValue = isAdmin ? true : false; // PostgreSQL verwendet TRUE/FALSE für Boolean
+
+        // 2. Benutzer einfügen
+        // ANPASSUNG: PostgreSQL Syntax, Feldname password_hash, $1, $2, $3
+        await pool.query(
+            'INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, $3)',
+                         [username, passwordHash, isAdminValue]
+        );
+
+        res.json({ success: true, message: 'Benutzer erfolgreich erstellt.' });
+    } catch (error) {
+        // PostgreSQL Eindeutigkeitsverletzung (Unique Constraint) hat Code '23505'
+        if (error.code === '23505') {
+            return res.status(409).json({ success: false, message: 'Benutzername existiert bereits.' });
+        }
+        console.error('Fehler beim Erstellen des Benutzers:', error);
+        res.status(500).json({ success: false, message: 'Interner Serverfehler.' });
+    }
+});
+
+app.delete('/api/deleteUser', requireAdmin, async (req, res) => {
+    const { id } = req.body;
+    const currentUserId = req.session.userId;
+
+    if (!id || isNaN(id)) {
+        return res.status(400).json({ success: false, message: 'Ungültige Benutzer-ID.' });
+    }
+
+    if (Number(id) === currentUserId) {
+        return res.status(403).json({ success: false, message: 'Sie können Ihr eigenes Konto nicht löschen.' });
+    }
+
+    try {
+        // ANPASSUNG: PostgreSQL Syntax (pool.query)
+        const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
+
+        if (result.rowCount === 0) { // PostgreSQL prüft rowCount
+            return res.status(404).json({ success: false, message: 'Benutzer nicht gefunden.' });
+        }
+
+        res.json({ success: true, message: 'Benutzer erfolgreich gelöscht.' });
+    } catch (error) {
+        console.error('Fehler beim Löschen des Benutzers:', error);
+        res.status(500).json({ success: false, message: 'Interner Serverfehler.' });
+    }
+});
+
+
+
+app.get('/api/serverupdates/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT ul FROM zustand WHERE id = $1', [id]);
+        if (result.rows.length > 0) {
+            const updates = result.rows[0].ul || '';
+            const updateList = updates
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+            res.json(updateList);
+        } else {
+            res.status(404).json({ error: 'Server nicht gefunden.' });
+        }
+    } catch (error) {
+        console.error('Fehler beim Abrufen der Updates:', error);
+        res.status(500).json({ error: 'Fehler beim Abrufen der Updates.' });
+    }
+});
+
 app.post('/api/update', async (req, res) => {
     const { id, field, value } = req.body;
     try {
@@ -115,103 +727,105 @@ app.post('/api/update', async (req, res) => {
     }
 });
 
-// Endpunkt für Aktionen (connect SSH oder Update)
-app.post('/api/action', (req, res) => {
-    const { ip, action } = req.body;
+app.post('/api/action', async (req, res) => {
+    const { ip, action, packages } = req.body;
 
     if (action === 'connectSSH') {
-        // Schreibt die IP in eine temporäre Datei und führt ein Shell-Skript aus
-        fs.writeFileSync('simp.tmp', ip);
-        exec('./imp.sh', (error) => {
-            if (error) {
-                console.error(error);
-                res.status(500).json({ error: 'Fehler beim Verbindungsaufbau via SSH.' });
-            } else {
-                res.json({ success: true });
+        let success = false;
+        const copyKeyCommand = `sshpass -p "${sshpass}" ssh-copy-id -o "StrictHostKeyChecking=accept-new" -i /root/.ssh/id_rsa.pub ${sshuser}@${ip}`;
+
+        console.log(`[SSH-KEY] Versuche, Schlüssel nach ${ip} zu kopieren...`);
+
+        try {
+            await new Promise((resolve, reject) => {
+                exec(copyKeyCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(`[SSH-KEY-FEHLER] Schlüsselkopie fehlgeschlagen für ${ip}. Stderr: ${stderr.trim()}. Error: ${error.message}`);
+                        return reject(error);
+                    }
+                    console.log(`[SSH-KEY] Schlüssel erfolgreich kopiert.`);
+                    resolve();
+                });
+            });
+
+            const newRandomPassword = crypto.randomBytes(24).toString('base64').slice(0, 32);
+            const changePassCommand = `${sshuser}:${newRandomPassword}`.replace(/"/g, '\\"');
+
+            await runSSH(ip, `echo "${changePassCommand}" | sudo chpasswd`, true);
+
+            console.log(`[SECURITY] Passwort für ${sshuser}@${ip} erfolgreich auf zufälligen Wert geändert.`);
+
+            const data = await collectDataViaSSH(ip);
+            const sanitizedData = typeof sanitizeData === 'function' ? sanitizeData(data) : data;
+            await insertOrUpdateData(sanitizedData);
+
+            fs.appendFileSync('idlist.log', `\n${ip}`);
+
+            success = true;
+
+        } catch (error) {
+            console.error(`Fehler bei connectSSH (Schlüsselkopie oder Datensammlung) auf ${ip}: ${error.message}`);
+            try {
+                const logData = fs.readFileSync('idlist.log', 'utf8').split('\n').filter(line => line.trim() !== ip).join('\n');
+                fs.writeFileSync('idlist.log', logData);
+            } catch (e) {
+                console.error("Fehler beim Löschen aus idlist.log:", e);
             }
-        });
+            return res.status(500).json({ error: `Fehler beim Verbindungsaufbau via SSH und Datensammlung: ${error.message.substring(0, 100)}...` });
+        }
+
+        if (success) {
+            return res.json({ success: true });
+        }
     } else if (action === 'updateServer') {
-        // Startet den Updateprozess und gibt den Fortschritt über WebSockets aus
         execUpdateWithProgress(ip);
+        res.json({ success: true });
+    } else if (action === 'updateSelected') {
+        if (!packages || packages.length === 0) {
+            return res.status(400).json({ error: 'Keine Pakete für das Update ausgewählt.' });
+        }
+        execSelectedUpdateWithProgress(ip, packages);
         res.json({ success: true });
     } else {
         res.status(400).json({ error: 'Ungültige Aktion.' });
     }
 });
 
-// Funktion, die den Updateprozess ausführt und Statusmeldungen sendet
-function execUpdateWithProgress(ip) {
-    // Erstes Kommando: apt upgrade -y
-    const upgradeCommand = `ssh ${sshuser}@${ip} 'apt upgrade -y'`;
-    // Zweites Kommando: /local/patch.sh
-    const patchCommand = `ssh ${sshuser}@${ip} '/local/patch.sh'`;
+// --- INIT: SSH-Konfiguration lesen und Scheduler starten ---
+fs.readFile(filePath, 'utf8', (err, data) => {
+    initializeAdminUser();
+    if (err) {
+        return console.error('Fehler beim Lesen der SSH-Konfigurationsdatei:', err);
+    }
 
-    // Erstes Kommando ausführen
-    const process1 = exec(upgradeCommand);
+    const lines = data.split('\n');
 
-    // Output von apt upgrade -y senden
-    process1.stdout.on('data', (data) => {
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(`apt upgrade: ${data.toString()}`);
-            }
-        });
+    lines.forEach(line => {
+        if (line.startsWith('user:')) {
+            sshuser = line.split(':')[1].replace(/"/g, '').trim();
+        } else if (line.startsWith('password:')) {
+            sshpass = line.split(':')[1].replace(/"/g, '').trim();
+        }
     });
 
-    process1.stderr.on('data', (data) => {
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(`Fehler bei apt upgrade: ${data.toString()}`);
-            }
-        });
-    });
-
-    process1.on('close', (code) => {
-        // Wenn das erste Kommando abgeschlossen ist, führe das zweite aus
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(`apt upgrade abgeschlossen mit Code: ${code}. Starte patch.sh...`);
-            }
-        });
-
-        // Zweites Kommando ausführen
-        const process2 = exec(patchCommand);
-
-        // Output von /local/patch.sh senden
-        process2.stdout.on('data', (data) => {
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(`patch.sh: ${data.toString()}`);
-                }
-            });
-        });
-
-        process2.stderr.on('data', (data) => {
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(`Fehler bei patch.sh: ${data.toString()}`);
-                }
-            });
-        });
-
-        process2.on('close', (code) => {
-            // Wenn das zweite Kommando abgeschlossen ist, sende eine Abschlussmeldung
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(`patch.sh auf ${ip} abgeschlossen mit Code: ${code}`);
-                }
-            });
-        });
-    });
-}
-
-// WebSocket-Server konfigurieren, um HTTP-Upgrades zu verarbeiten
-const server = app.listen(port, () => {
-    console.log(`Server läuft unter http://localhost:${port}`);
+    startScheduler();
 });
 
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
+// --- SERVER START ---
+const server = app.listen(port, () => {
+    console.log(`Patch-Management Server läuft auf http://localhost:${port}`);
+});
+
+// WebSocket-Handler
+const wss = new WebSocket.Server({ noServer: true });
+
 server.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, ws => {
-        wss.emit('connection', ws, request);
+    wss.handleUpgrade(request, socket, head, socket => {
+        wss.emit('connection', socket, request);
     });
 });
