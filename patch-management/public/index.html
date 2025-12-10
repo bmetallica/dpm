@@ -5,9 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patch Management</title>
     <link rel="stylesheet" href="styles.css">
-</head>
+    </head>
 <body>
+
+<header>
+    <h1>Patch Management Dashboard</h1>
+    <div class="user-info">
+        Willkommen, <span id="currentUsername"></span> |
+        <button id="userManagementButton" style="display: none;" onclick="openUserManagementPopup()">
+            👥 Benutzerverwaltung
+        </button>
+        <button id="changePasswordButton">Passwort ändern</button>
+        <button onclick="handleLogout()">Abmelden</button>
+    </div>
+</header>
+
+<div id="adminArea" style="display: none;">
+    <h2>⚙️ Benutzerverwaltung (Admin)</h2>
+    <div id="userManagementSection">
+        </div>
+    <hr>
+</div>
+
+
+
     <div class="container">
+        <button class="action-button" onclick="openAddServerPopup()">➕ Server hinzufügen</button>&ensp;&ensp;&ensp;
+        <button style="float: right;" onclick="copyBootstrapCommand()" id="copyBootstrapButton" class="action-button" disabled>
+        Bootstrap kopieren 📎
+    </button>
+
         <table id="zustandTable">
             <thead>
                 <tr>
@@ -15,10 +42,10 @@
                     <th>Debian Version</th>
                     <th>Zuständig</th>
                     <th>Possible Updates</th>
-                    <th>Updates</th>
                     <th>Root Free</th>
                     <th>Last Run</th>
-                    <th>Action</th>
+                    <th>Aktion</th>
+                    <th width=30px>l&ouml;schen</th>
                     <th>Kommentar</th>
                 </tr>
             </thead>
@@ -26,7 +53,6 @@
         </table>
     </div>
 
-    <!-- Popup-Fenster für den Update-Prozess -->
     <div id="updatePopup" class="popup" style="display: none;">
         <div class="popup-content">
             <span id="closePopup" onclick="closePopup()">&times;&nbsp;&nbsp;</span>
@@ -35,18 +61,288 @@
         </div>
     </div>
 
+    <div id="selectUpdatePopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <span id="closeSelectPopup" onclick="closeSelectPopup()">&times;&nbsp;&nbsp;</span>
+            <h2 id="selectUpdateServerTitle">Updates für Server:</h2>
+            
+            <table id="updateTable">
+                <thead>
+                    <tr>
+                        <th>Auswahl</th>
+                        <th>Paket</th>
+                        <th>Aktuelle Version</th>
+                        <th>Update auf Version</th>
+                    </tr>
+                </thead>
+                <tbody id="updateCheckboxes">
+                    </tbody>
+            </table>
+            
+            <button class="action-button" onclick="startSelectedUpdate()">Ausgewählte Updates installieren</button>
+            <p id="selectedUpdateError" style="color: red; display: none;">Bitte wählen Sie mindestens ein Update aus.</p>
+        </div>
+    </div>
+
+    <div id="addServerPopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <span onclick="closeAddServerPopup()">&times;&nbsp;&nbsp;</span>
+            <h2>Neuen Server hinzufügen</h2>
+            <input type="text" id="newServerIp" placeholder="IP-Adresse des Clients (z.B. 192.168.1.10)" required>
+            <button class="action-button" onclick="addAndConnectServer()">Server hinzufügen & Verbinden</button>
+            <p id="addServerError" style="color: red; display: none; margin-top: 10px;">Bitte geben Sie eine gültige IP-Adresse ein.</p>
+        </div>
+    </div>
+
+    <div id="schedulePopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <span onclick="closeSchedulePopup()">&times;&nbsp;&nbsp;</span>
+            <h2 id="scheduleServerTitle">Intervall für Server:</h2>
+            <input type="hidden" id="scheduleServerId">
+            <input type="hidden" id="scheduleServerIp">
+            
+            <div class="schedule-options">
+                <label>
+                    <input type="radio" name="scheduleType" value="hourly" onchange="toggleScheduleOptions()"> Stündlich
+                </label><br>
+                <label>
+                    <input type="radio" name="scheduleType" value="daily" onchange="toggleScheduleOptions()"> Täglich um
+                    <input type="time" id="dailyTime" value="03:00" disabled> Uhr
+                </label><br>
+                <label>
+                    <input type="radio" name="scheduleType" value="weekly" onchange="toggleScheduleOptions()"> Jeden Sonntag um
+                    <input type="time" id="weeklyTime" value="04:00" disabled> Uhr
+                </label>
+            </div>
+            
+            <button class="action-button" onclick="saveSchedule()">Intervall speichern</button>
+            <p id="scheduleStatus" style="color: green; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="changePasswordPopup" class="popup" style="display: none;">
+    <div class="popup-content">
+        <span onclick="closeChangePasswordPopup()">&times;&nbsp;&nbsp;</span>
+        <h2>Passwort ändern</h2>
+        <input type="password" id="oldPassword" placeholder="Altes Passwort" required style="margin-bottom: 10px;">
+        <input type="password" id="newPassword" placeholder="Neues Passwort" required style="margin-bottom: 10px;">
+        <input type="password" id="confirmNewPassword" placeholder="Neues Passwort bestätigen" required style="margin-bottom: 10px;">
+        <button class="action-button" onclick="submitChangePassword()">Passwort aktualisieren</button>
+        <p id="passwordChangeStatus" style="color: red; margin-top: 10px;"></p>
+    </div>
+</div>
+
+<div id="userManagementPopup" class="popup" style="display: none;">
+    <div class="popup-content">
+        <span onclick="closeUserManagementPopup()">&times;&nbsp;&nbsp;</span>
+        <h2>👥 Benutzerverwaltung</h2>
+
+        <h3>Neuen Benutzer anlegen</h3>
+        <input type="text" id="newUsername" placeholder="Benutzername" required style="margin-bottom: 10px;">
+        <input type="password" id="newUserPassword" placeholder="Passwort" required style="margin-bottom: 10px;">
+        <label>
+            <input type="checkbox" id="newUserIsAdmin"> Administrator
+        </label>
+        <button class="action-button" onclick="createUser()">Benutzer erstellen</button>
+        <p id="userCreationStatus" style="color: red; margin-top: 10px;"></p>
+
+        <hr>
+
+        <h3>Bestehende Benutzer löschen</h3>
+        <table id="userTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Benutzername</th>
+                    <th>Admin</th>
+                    <th>Aktion</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+
     <script>
         let ws;
+        let currentServerRow; // Speichert die IP und ID des aktuell ausgewählten Servers
 
-        // Funktion zum Öffnen des Popups
+        // --- NEUE FUNKTIONEN FÜR SERVER HINZUFÜGEN ---
+
+        function openAddServerPopup() {
+            document.getElementById('newServerIp').value = '';
+            document.getElementById('addServerError').style.display = 'none';
+            document.getElementById('addServerPopup').style.display = 'block';
+        }
+
+        function closeAddServerPopup() {
+            document.getElementById('addServerPopup').style.display = 'none';
+        }
+
+        async function addAndConnectServer() {
+            const ip = document.getElementById('newServerIp').value.trim();
+            const errorDisplay = document.getElementById('addServerError');
+
+            // Einfache Validierung der IP-Adresse
+            if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+                errorDisplay.textContent = 'Bitte geben Sie eine gültige IP-Adresse ein.';
+                errorDisplay.style.display = 'block';
+                return;
+            }
+
+            errorDisplay.style.display = 'none';
+            closeAddServerPopup();
+            
+            // Führt zwei Aktionen nacheinander aus: addServer und connectSSH
+            try {
+                // 1. Server in die DB einfügen
+                await fetch('/api/addServer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip })
+                });
+                
+                // 2. Direkt "Connect SSH" ausführen (startet die Datensammlung)
+                await executeAction(ip, 'connectSSH');
+                
+                alert(`Server ${ip} wurde hinzugefügt und Datensammlung gestartet. Bitte warten Sie einen Moment auf die Aktualisierung.`);
+                loadZustand();
+            } catch (error) {
+                alert(`Fehler beim Hinzufügen/Verbinden von Server ${ip}.`);
+                console.error(error);
+                loadZustand();
+            }
+        }
+        
+        // --- NEUE FUNKTIONEN FÜR SCHEDULING ---
+        
+        function openSchedulePopup(id, ip, schedule) {
+            document.getElementById('scheduleServerId').value = id;
+            document.getElementById('scheduleServerIp').value = ip;
+            document.getElementById('scheduleServerTitle').textContent = `Intervall für Server: ${ip}`;
+            document.getElementById('scheduleStatus').textContent = '';
+            
+            // Setze die Radiobuttons basierend auf dem aktuellen Schedule
+            let type = schedule.type || 'hourly';
+            let time = schedule.time || '03:00';
+            
+            document.querySelector(`input[name="scheduleType"][value="${type}"]`).checked = true;
+            
+            // Setze die Uhrzeiten
+            document.getElementById('dailyTime').value = time;
+            document.getElementById('weeklyTime').value = time;
+            
+            toggleScheduleOptions(); // Aktiviert/Deaktiviert die Zeitfelder
+            document.getElementById('schedulePopup').style.display = 'block';
+        }
+
+        function closeSchedulePopup() {
+            document.getElementById('schedulePopup').style.display = 'none';
+        }
+        
+        function toggleScheduleOptions() {
+            const dailyChecked = document.querySelector('input[name="scheduleType"][value="daily"]').checked;
+            const weeklyChecked = document.querySelector('input[name="scheduleType"][value="weekly"]').checked;
+            
+            document.getElementById('dailyTime').disabled = !dailyChecked;
+            document.getElementById('weeklyTime').disabled = !weeklyChecked;
+        }
+
+        async function saveSchedule() {
+            const id = document.getElementById('scheduleServerId').value;
+            const ip = document.getElementById('scheduleServerIp').value;
+            const type = document.querySelector('input[name="scheduleType"]:checked').value;
+            let time = '';
+            
+            if (type === 'daily') {
+                time = document.getElementById('dailyTime').value;
+            } else if (type === 'weekly') {
+                time = document.getElementById('weeklyTime').value;
+            }
+            
+            try {
+                await fetch('/api/schedule', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, ip, type, time })
+                });
+                
+                document.getElementById('scheduleStatus').textContent = 'Intervall erfolgreich gespeichert.';
+                // Optional: Popup nach kurzer Zeit schließen oder Tabelle neu laden
+                setTimeout(() => {
+                    closeSchedulePopup();
+                    loadZustand();
+                }, 1500);
+                
+            } catch (error) {
+                document.getElementById('scheduleStatus').textContent = 'Fehler beim Speichern des Intervalls.';
+                console.error(error);
+            }
+        }
+        
+        // --- BESTEHENDE FUNKTIONEN (kleine Anpassung in renderAction) ---
+
+        // Funktion zum Öffnen des Log-Popups
         function openPopup() {
             document.getElementById('updatePopup').style.display = 'block';
         }
 
-        // Funktion zum Schließen des Popups
+        // Funktion zum Schließen des Log-Popups
         function closePopup() {
             document.getElementById('updatePopup').style.display = 'none';
             if (ws) ws.close(); // Schließe die WebSocket-Verbindung
+        }
+
+        // NEU: Funktion zum Öffnen des Select-Update-Popups mit Tabellenerstellung
+        function openSelectPopup(ip, updates, id) {
+            currentServerRow = { ip, id };
+            document.getElementById('selectUpdateServerTitle').textContent = `Updates für Server: ${ip}`;
+            
+            const tableBody = document.getElementById('updateCheckboxes');
+            tableBody.innerHTML = '';
+            
+            const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
+
+
+            updates.forEach((updateLine) => {
+                const match = updateLine.match(updateRegex);
+                
+                let packageName = 'Unbekannt';
+                let oldVersion = 'N/A';
+                let newVersion = 'N/A';
+                let updateValue = updateLine.split(' ')[0]; 
+
+                if (match) {
+                    packageName = match[1];
+                    newVersion = match[2].split(' ')[0]; 
+                    oldVersion = match[3];
+                    updateValue = packageName; 
+                }
+
+                const tr = document.createElement('tr');
+                
+                tr.innerHTML = `
+                    <td>
+                        <input type="checkbox" name="selectedUpdate" value="${updateValue}" checked>
+                    </td>
+                    <td>${packageName}</td>
+                    <td>${oldVersion}</td>
+                    <td>${newVersion}</td>
+                `;
+                
+                tableBody.appendChild(tr);
+            });
+
+            document.getElementById('selectUpdatePopup').style.display = 'block';
+        }
+
+        // Funktion zum Schließen des Select-Update-Popups
+        function closeSelectPopup() {
+            document.getElementById('selectedUpdateError').style.display = 'none';
+            document.getElementById('selectUpdatePopup').style.display = 'none';
+            currentServerRow = null; 
         }
 
         // Funktion zum automatischen Scrollen nach unten
@@ -67,13 +363,12 @@
                 if (parseInt(row.pu) >= 1) tr.classList.add('highlight-row');
 
                 tr.innerHTML = `
-                    <td>${row.server}</td>
+                    <td>${row.server} <span style="cursor: pointer; margin-left: 5px;" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}' })">⚙️</span></td>
                     <td>${row.sys}</td>
                     <td>
                         <textarea onchange="saveText(${row.id}, 'zus', this.value)">${row.zus}</textarea>
                     </td>
                     <td>${row.pu}</td>
-                    <td>${formatUpdates(row.ul)}</td>
                     <td>${row.root_free}</td>
                     <td>${formatdate(row.last_run)}</td>
                     <td>${renderAction(row)}</td>
@@ -94,12 +389,9 @@
             });
         }
 
-        // Funktion zur Formatierung der Update-Liste in die gewünschte Darstellung
-        function formatUpdates(updates) {
-            return updates.split('\n').map(update => `<p>${update}</p>`).join('');
-        }
         // Funktion zur Formatierung des last_run in die gewünschte Darstellung
         function formatdate(last_run) {
+            if (!last_run) return 'N/A';
             return last_run.split('.')[0].replace('T', ' ');
         }
 
@@ -112,15 +404,16 @@
             let actionButtons = '';
 
             if (!inLogFile) {
+                // NEU: Beim Hinzufügen eines Servers soll dies nur der Initial-Schritt sein
                 actionButtons += `<table id=at><tr><td><button class="action-button" onclick="executeAction('${ip}', 'connectSSH')">Connect SSH</button></td>`;
             } else if (inLogFile && updatesAvailable === 0) {
-                actionButtons += '<table id=at><tr><td><span class="connected">✔ ssh connected</span></td>';
+                actionButtons += '<table id=at><tr></tr></table>';
             } else if (inLogFile && updatesAvailable >= 1) {
-                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="updateServer('${ip}')">Update Server</button></td>`;
+                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="selupd('${ip}', ${row.id})">Select Updates</button>&ensp;&ensp;&ensp;<button class="action-button" onclick="updateServer('${ip}')">Update FULL Server</button></td></tr></table>`;
             }
 
             // Server löschen-Button hinzufügen
-            actionButtons += `<td width=20%><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td></tr></table>`;
+            actionButtons += `<td ><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td>`;
 
             return actionButtons;
         }
@@ -138,54 +431,482 @@
             }
         }
 
-        // Funktion zum Starten des Updateprozesses und zur WebSocket-Verbindung
+        // Funktion zum Starten des Updateprozesses (FULL) und zur WebSocket-Verbindung
         async function updateServer(ip) {
             openPopup();
 
             // WebSocket-Verbindung herstellen
             ws = new WebSocket(`ws://${location.host}`);
 
-            // Beim Öffnen des WebSockets den Updateprozess starten
+            // Beim Öffnen des WebSockets nur Start-Log-Nachricht anzeigen
             ws.onopen = () => {
-                document.getElementById('updateLog').textContent = `Starte Update auf ${ip}...\n`;
-                scrollToBottom();  // Sicherstellen, dass wir immer nach unten scrollen
+                document.getElementById('updateLog').textContent = `WebSocket-Verbindung hergestellt.\nStarte FULL Update auf ${ip}...\n`;
+                scrollToBottom();
             };
 
             // Nachrichten empfangen und im Log anzeigen
             ws.onmessage = (event) => {
                 const log = document.getElementById('updateLog');
                 log.textContent += event.data + '\n';
-                scrollToBottom();  // Automatisches Scrollen nach unten
+                scrollToBottom();
             };
 
             // Wenn WebSocket-Verbindung geschlossen wird
             ws.onclose = () => {
                 const log = document.getElementById('updateLog');
                 log.textContent += 'Verbindung geschlossen.';
-                scrollToBottom();  // Nochmals scrollen, wenn die Verbindung geschlossen wird
+                scrollToBottom();
                 location.reload();
             };
 
-            // Sende die Update-Anfrage an den Server
+            // Sende die Update-Anfrage an den Server SOFORT
             await fetch('/api/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ip, action: 'updateServer' })
             });
         }
+        
+        // Funktion, die durch den "Select Updates" Button aufgerufen wird
+        async function selupd(ip, id) {
+            const response = await fetch(`/api/serverupdates/${id}`);
+            const updates = await response.json();
+
+            if (updates && updates.length > 0 && Array.isArray(updates)) {
+                openSelectPopup(ip, updates, id);
+            } else {
+                alert(`Keine Updates für ${ip} gefunden.`);
+            }
+        }
+
+        // Funktion zum Starten des ausgewählten Updateprozesses
+        async function startSelectedUpdate() {
+            const selectedCheckboxes = document.querySelectorAll('#updateCheckboxes input[name="selectedUpdate"]:checked');
+            const packagesToUpdate = Array.from(selectedCheckboxes).map(cb => cb.value);
+            const errorDisplay = document.getElementById('selectedUpdateError');
+            
+            if (packagesToUpdate.length === 0) {
+                errorDisplay.style.display = 'block';
+                return;
+            }
+            
+            if (!currentServerRow || !currentServerRow.ip) {
+                console.error("Fehler: Serverinformationen fehlen.");
+                alert("Fehler: Serverinformationen konnten nicht abgerufen werden.");
+                closeSelectPopup();
+                return;
+            }
+
+            const ip = currentServerRow.ip; 
+
+            errorDisplay.style.display = 'none';
+            closeSelectPopup(); 
+
+            openPopup(); 
+
+            ws = new WebSocket(`ws://${location.host}`);
+
+            ws.onopen = () => {
+                document.getElementById('updateLog').textContent = `WebSocket-Verbindung hergestellt.\nStarte gezieltes Update auf ${ip}...\n`;
+                scrollToBottom();
+            };
+
+            ws.onmessage = (event) => {
+                const log = document.getElementById('updateLog');
+                log.textContent += event.data + '\n';
+                scrollToBottom();
+            };
+
+            ws.onclose = () => {
+                const log = document.getElementById('updateLog');
+                log.textContent += 'Verbindung geschlossen.';
+                scrollToBottom();
+                location.reload();  
+            };
+            
+            try {
+                await fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({  
+                        ip,  
+                        action: 'updateSelected', 
+                        packages: packagesToUpdate
+                    })
+                });
+            } catch (error) {
+                console.error("Fehler beim Senden der Update-Aktion an den Server:", error);
+                document.getElementById('updateLog').textContent += `\nFEHLER: Konnte die Update-Aktion nicht starten. Überprüfen Sie die Server-Logs.`;
+                scrollToBottom();
+            }
+        }
 
         // Funktion zum Ausführen einer SSH-Verbindung oder anderer Aktionen
         async function executeAction(ip, action) {
+            // NEU: Zeige das Log-Popup an, wenn "connectSSH" ausgeführt wird, damit der Benutzer weiß, dass etwas passiert
+            if (action === 'connectSSH') {
+                openPopup();
+                document.getElementById('updateLog').textContent = `Starte SSH-Verbindung zu ${ip} und Datensammlung...`;
+            }
+
             await fetch('/api/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ip, action })
             });
-            loadZustand(); // Tabelle aktualisieren
+            
+            // Bei connectSSH muss man kurz warten, bis das Skript durchgelaufen ist, bevor man neu lädt
+            if (action === 'connectSSH') {
+                // Wir schließen das Log nach 3 Sekunden und laden neu, da das Backend-Skript nicht mit dem WebSocket verbunden ist
+                setTimeout(() => {
+                    closePopup();
+                    loadZustand(); 
+                }, 3000); 
+            } else {
+                loadZustand(); 
+            }
         }
 
         // Initiales Laden der Zustandsdaten
         loadZustand();
+
+
+// index.js (oder Ihre Frontend-JS-Datei)
+
+let globalCurlCommand = ''; // Speichert den abgerufenen Curl-Befehl
+
+/**
+ * Ruft den Curl-Befehl vom Server ab und speichert ihn global.
+ * Aktiviert anschließend den Kopier-Button.
+ */
+async function loadBootstrapCommand() {
+    const copyButton = document.getElementById('copyBootstrapButton');
+
+    try {
+        const response = await fetch('/api/config');
+        const data = await response.json();
+
+        // Den Befehl global speichern
+        globalCurlCommand = data.curlCommand;
+
+        // Kopierfunktion aktivieren
+        copyButton.disabled = false;
+        copyButton.innerText = 'Bootstrap kopieren 📎';
+        console.log("Bootstrap-Befehl erfolgreich geladen und Kopier-Button aktiviert.");
+
+    } catch (error) {
+        console.error('Fehler beim Laden des Curl-Befehls:', error);
+        copyButton.innerText = 'Fehler!';
+        copyButton.disabled = true;
+    }
+}
+
+/**
+ * Kopiert den global gespeicherten Befehl in die Zwischenablage.
+ */
+function copyBootstrapCommand() {
+    if (!globalCurlCommand) {
+        alert("Befehl ist noch nicht geladen.");
+        return;
+    }
+
+    // Kopiert den gespeicherten Befehl
+    navigator.clipboard.writeText(globalCurlCommand).then(() => {
+        const copyButton = document.getElementById('copyBootstrapButton');
+        copyButton.innerText = 'Kopiert! ✅';
+        setTimeout(() => {
+            copyButton.innerText = 'Bootstrap kopieren 📎';
+        }, 2000);
+    }).catch(err => {
+        console.error('Fehler beim Kopieren: ', err);
+        alert('Fehler beim Kopieren des Befehls.');
+    });
+}
+
+// RUFE DIE FUNKTION BEIM START AUF
+document.addEventListener('DOMContentLoaded', loadBootstrapCommand);
+
+
+
+
+
+// index.html (oder index.js im public-Ordner)
+
+async function initDashboard() {
+    try {
+        // 1. Rufe den geschützten Status-Endpunkt auf
+        const response = await fetch('/api/status');
+
+        if (response.status === 401) {
+             // Wenn der Server 401 (Nicht authentifiziert) zurückgibt, zur Login-Seite leiten.
+             window.location.href = '/login.html';
+             return;
+        }
+
+        const data = await response.json();
+
+    if (!data.loggedIn) {
+        // ... (Redirect) ...
+    }
+
+    // 2. Dashboard erfolgreich initialisieren
+    document.getElementById('currentUsername').textContent = data.username || 'Benutzer';
+
+    // 3. Initialisiere Admin-Bereich (Jetzt nur den Button anzeigen)
+    if (data.isAdmin) {
+        // Macht den Benutzerverwaltungs-Button im Header sichtbar
+        document.getElementById('userManagementButton').style.display = 'inline-block';
+    }
+
+        // 4. Initialisiere den Bootstrap-Button
+        loadBootstrapCommand();
+
+    } catch (error) {
+        console.error('Initialisierungsfehler:', error);
+        // Fallback bei Netzwerkfehlern
+        window.location.href = '/login.html';
+    }
+}
+
+// Rufen Sie die neue Initialisierungsfunktion beim Start auf
+
+
+
+// --- AUTHENTIFIZIERUNGS-FUNKTIONEN ---
+
+async function handleLogout() {
+    await fetch('/api/logout', { method: 'POST' });
+    // Nach Logout zur Anmeldeseite weiterleiten
+    window.location.href = '/login.html';
+}
+
+function renderUserManagement() {
+    // Hier können Sie später Code hinzufügen, um Admin-Inhalte zu laden.
+    // Im Moment dient es nur dazu, den ReferenceError zu verhindern.
+    const adminDiv = document.getElementById('userManagementSection');
+    adminDiv.innerHTML = '<p>Die Benutzerverwaltung wird hier bald geladen...</p>';
+    console.log("Admin-Bereich: renderUserManagement aufgerufen.");
+}
+
+// Hilfsfunktion zum Auslesen von Cookies (für Username/Admin-Status)
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+}
+
+// Rufen Sie die neue Initialisierungsfunktion beim Start auf
+document.addEventListener('DOMContentLoaded', initDashboard);
+
+
+
+function openChangePasswordPopup() {
+    // Felder leeren und Status zurücksetzen
+    document.getElementById('oldPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmNewPassword').value = '';
+    document.getElementById('passwordChangeStatus').textContent = '';
+    document.getElementById('passwordChangeStatus').style.color = 'red';
+
+    document.getElementById('changePasswordPopup').style.display = 'block';
+}
+
+/**
+ * Schließt das Pop-up zum Ändern des Passworts.
+ */
+function closeChangePasswordPopup() {
+    document.getElementById('changePasswordPopup').style.display = 'none';
+}
+
+/**
+ * Sendet die Anfrage zur Passwortänderung an den Server.
+ */
+async function submitChangePassword() {
+    const oldPassword = document.getElementById('oldPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+    const statusDisplay = document.getElementById('passwordChangeStatus');
+
+    statusDisplay.textContent = ''; // Status zurücksetzen
+
+    if (newPassword.length < 6) { // Beispiel: Mindestlänge 6 Zeichen
+        statusDisplay.textContent = 'Das neue Passwort muss mindestens 6 Zeichen lang sein.';
+        return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+        statusDisplay.textContent = 'Die neuen Passwörter stimmen nicht überein.';
+        return;
+    }
+
+    statusDisplay.style.color = 'blue';
+    statusDisplay.textContent = 'Wird aktualisiert...';
+
+    try {
+        const response = await fetch('/api/changePassword', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldPassword, newPassword })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusDisplay.style.color = 'green';
+            statusDisplay.textContent = 'Passwort erfolgreich geändert!';
+            // Pop-up nach kurzer Zeit schließen
+            setTimeout(closeChangePasswordPopup, 2000);
+        } else {
+            statusDisplay.style.color = 'red';
+            statusDisplay.textContent = result.message || 'Fehler beim Ändern des Passworts.';
+        }
+
+    } catch (error) {
+        statusDisplay.style.color = 'red';
+        statusDisplay.textContent = 'Netzwerkfehler beim Ändern des Passworts.';
+        console.error('Passwort-Änderungsfehler:', error);
+    }
+}
+
+// *** WICHTIG: Event-Listener zuweisen ***
+document.addEventListener('DOMContentLoaded', () => {
+    // ... Ihr vorhandener Code ...
+
+    // NEU: Listener für den Passwort-Button
+    const changeButton = document.getElementById('changePasswordButton');
+    if (changeButton) {
+        changeButton.addEventListener('click', openChangePasswordPopup);
+    }
+});
+
+
+
+// --- BENUTZERVERWALTUNGS FUNKTIONEN ---
+
+function openUserManagementPopup() {
+    document.getElementById('userManagementPopup').style.display = 'block';
+    loadUsers(); // Lädt die aktuelle Benutzerliste, sobald das Pop-up geöffnet wird
+}
+
+function closeUserManagementPopup() {
+    document.getElementById('userManagementPopup').style.display = 'none';
+    document.getElementById('userCreationStatus').textContent = '';
+}
+
+/**
+ * Ruft die Benutzerliste vom Server ab und füllt die Tabelle.
+ */
+async function loadUsers() {
+    const tableBody = document.getElementById('userTableBody');
+    tableBody.innerHTML = '<tr><td colspan="4">Lade Benutzer...</td></tr>';
+
+    try {
+        const response = await fetch('/api/users');
+        if (response.status === 403) {
+             tableBody.innerHTML = '<tr><td colspan="4" style="color:red;">Keine Berechtigung zur Anzeige.</td></tr>';
+             return;
+        }
+
+        const users = await response.json();
+        tableBody.innerHTML = '';
+
+        users.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.username}</td>
+                <td>${user.is_admin ? 'Ja' : 'Nein'}</td>
+                <td>
+                    <button class="del-button" onclick="deleteUser(${user.id}, '${user.username}')">Löschen</button>
+                </td>
+            `;
+            tableBody.appendChild(tr);
+        });
+
+    } catch (error) {
+        console.error('Fehler beim Laden der Benutzer:', error);
+        tableBody.innerHTML = '<tr><td colspan="4" style="color:red;">Fehler beim Laden der Daten.</td></tr>';
+    }
+}
+
+/**
+ * Erstellt einen neuen Benutzer.
+ */
+async function createUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newUserPassword').value;
+    const isAdmin = document.getElementById('newUserIsAdmin').checked;
+    const statusDisplay = document.getElementById('userCreationStatus');
+
+    if (!username || !password || password.length < 6) {
+        statusDisplay.textContent = 'Bitte Benutzername und ein Passwort (min. 6 Zeichen) eingeben.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/createUser', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, isAdmin })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusDisplay.style.color = 'green';
+            statusDisplay.textContent = `Benutzer ${username} erfolgreich erstellt!`;
+            // Formular leeren
+            document.getElementById('newUsername').value = '';
+            document.getElementById('newUserPassword').value = '';
+            document.getElementById('newUserIsAdmin').checked = false;
+            loadUsers(); // Liste aktualisieren
+        } else {
+            statusDisplay.style.color = 'red';
+            statusDisplay.textContent = result.message || 'Fehler beim Erstellen des Benutzers.';
+        }
+    } catch (error) {
+        statusDisplay.style.color = 'red';
+        statusDisplay.textContent = 'Netzwerkfehler beim Erstellen.';
+        console.error('Fehler beim Erstellen:', error);
+    }
+}
+
+/**
+ * Löscht einen Benutzer nach Bestätigung.
+ */
+async function deleteUser(id, username) {
+    // Verhindere das Löschen des eigenen Kontos (optional)
+    const currentUsername = document.getElementById('currentUsername').textContent;
+    if (username === currentUsername) {
+        alert("Sie können Ihr eigenes aktuell eingeloggtes Konto nicht löschen.");
+        return;
+    }
+
+    if (confirm(`Soll der Benutzer ${username} (ID: ${id}) wirklich gelöscht werden?`)) {
+        try {
+            const response = await fetch('/api/deleteUser', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`Benutzer ${username} erfolgreich gelöscht.`);
+                loadUsers(); // Liste aktualisieren
+            } else {
+                alert(result.message || 'Fehler beim Löschen des Benutzers.');
+            }
+        } catch (error) {
+            console.error('Fehler beim Löschen:', error);
+            alert('Netzwerkfehler beim Löschen des Benutzers.');
+        }
+    }
+}
+
+
     </script>
 </body>
 </html>
