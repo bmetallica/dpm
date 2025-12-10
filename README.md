@@ -6,14 +6,60 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server im geschützten
 
 ---
 
+
+💻 Kernfunktionen und Systemzustand
+
+  * Zentrale Zustandsübersicht: Dashboard zur gleichzeitigen Anzeige aller registrierten Server.
+
+  * Update-Erkennung: Automatische Ermittlung der Anzahl und Liste der verfügbaren Paket-Updates (apt list --upgradable) via SSH.
+
+  * Wichtige Systemmetriken: Erfassung von Host-Informationen (System-OS) und freiem Root-Speicherplatz.
+
+<br>
+
+⏰ Zeitsteuerung und Automatisierung
+
+  * Flexible Zeitplanung: Frei wählbare Scheduling-Typen für die automatische Datenerfassung (stündlich, täglich, wöchentlich).
+<br>
+
+🛡️ SSH-Management und Sicherheit
+
+  * One-Line-Bootstrap (grund.sh): Bereitstellung eines einfachen curl-Befehls zum schnellen Hinzufügen neuer Server und zur initialen Systemvorbereitung.
+
+  * Automatisierter Key-Transfer: Das System kopiert den SSH Public Key automatisch auf den Zielserver, um die Grundlage für passwortloses Management zu schaffen.
+
+  * Passwort-Härtung: Sofortige und automatische Änderung des SSH-Passworts auf dem Zielserver zu einem zufälligen, kryptografisch sicheren Wert nach erfolgreichem Key-Transfer.
+<br>
+
+🚀 Update-Aktionen
+
+  * Gezieltes Patching: Manuelle Auswahl und Installation einzelner Updates (apt install package-name).
+
+  * Volles System-Upgrade: Startet das vollständige apt upgrade -y auf dem ausgewählten Server.
+
+  * Live-Progress: Detaillierte Echtzeit-Übertragung der Installations- und Log-Ausgaben über WebSockets.
+<br>
+
+👥 Benutzer und Administration
+
+  * Sichere Authentifizierung: Login mit Passwort-Hashing (bcrypt) und Session-Management.
+
+  * Rollenbasierte Kontrolle (RBAC): Unterscheidung zwischen Administratoren und Standard-Benutzern.
+
+  * User-Management: Administratives Erstellen und Löschen von Benutzerkonten.
+
+  * Passwort-Änderung: Benutzer können ihr eigenes Passwort ändern.
+
+<br><br>
+
+---
 ## 🚀 Voraussetzungen
 
 - Debian-Server mit **SSH**
 - Im Netzwerk erreichbare **PostgreSQL-Datenbank**
 - Installiertes **Node.js** inkl. `npm`
-- Auf allen Zielsystemen:
-  - Ein Benutzer mit APT-Rechten und SSH-Zugang
-  - Eintrag in der Datei `ssh.conf`
+- SSH root Zugriff auf die Zielserver
+
 
 ---
 
@@ -43,7 +89,7 @@ ssh-keygen
 ```bash
 cd /opt/dpm/patch-management
 npm init -y
-npm install express pg body-parser ws
+npm install express pg ws bcrypt node-cron express-session
 ```
 
 ---
@@ -61,60 +107,68 @@ CREATE SEQUENCE public.zustand_id_seq
     NO MAXVALUE
     CACHE 1;
 
-CREATE TABLE public.zustand (
+CREATE TABLE IF NOT EXISTS public.zustand
+(
     id integer NOT NULL DEFAULT nextval('zustand_id_seq'::regclass),
-    server character varying(15) NOT NULL,
-    sys character varying(255) NOT NULL,
-    pu character varying(3) NOT NULL,
-    ul text,
-    root_free character varying(10) NOT NULL,
-    last_run timestamp NOT NULL,
-    zus character varying(255),
-    komment character varying(255),
+    server character varying(15) COLLATE pg_catalog."default" NOT NULL,
+    sys character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    pu character varying(3) COLLATE pg_catalog."default" NOT NULL,
+    ul text COLLATE pg_catalog."default",
+    root_free character varying(10) COLLATE pg_catalog."default" NOT NULL,
+    last_run timestamp with time zone NOT NULL,
+    zus character varying(255) COLLATE pg_catalog."default",
+    komment character varying(255) COLLATE pg_catalog."default",
+    schedule_type text COLLATE pg_catalog."default",
+    schedule_time text COLLATE pg_catalog."default",
     CONSTRAINT zustand_pkey PRIMARY KEY (id),
     CONSTRAINT zustand_server_key UNIQUE (server)
-);
+)
+
+CREATE TABLE IF NOT EXISTS public.users
+(
+    id integer NOT NULL DEFAULT nextval('users_id_seq'::regclass),
+    username character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    password_hash character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    is_admin boolean DEFAULT false,
+    CONSTRAINT users_pkey PRIMARY KEY (id),
+    CONSTRAINT users_username_key UNIQUE (username)
+)
+
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.users
+    OWNER to postgres;
 ```
 
 ---
 
 ## 🔧 Konfiguration
 
-### 1. SSH-Zugang konfigurieren
+### 1. SSH-Zugang konfigurieren 
+Benutzername und Passwort für einen noch nicht existierenden Dienste-Benutzer eintragen <p>
+<i>(Das Passwort wird nach der Initialisierung auf den Servern automatisch geändert)</i>
 
 Datei `ssh.conf` anpassen:
 
 ```conf
-benutzername
-passwort
+user:"BENUTZERNAME"
+password:"PASSWORT"
 ```
+
+Datei `public/grund.sh` anpassen:
+Hier müssen die selben Zugangsdaten wie in der ssh.conf hinterlegt werden!
 
 ### 2. Datenbank-Zugangsdaten in `index.js` eintragen.
 
-### 3. `patch.sh` auf den Zielsystemen einrichten
-
-- Datei `/opt/dpm/utils/patch.sh` nach `/local/` auf dem Zielserver kopieren
-- In `patch.sh` die Datenbank-Zugangsdaten anpassen
-- Cronjob zum regelmäßigen Ausführen einrichten:
-
-```bash
-crontab -e
-```
-
-```cron
-0 * * * * /local/patch.sh
-```
-
----
 
 ## 🔄 Systemd-Dienst einrichten
 
 ```bash
-mv /opt/dpm/utils/pm.service /etc/systemd/system/
-chmod 755 /etc/systemd/system/pm.service
+mv /opt/dpm/utils/pm.service /etc/systemd/system/dpm.service
+chmod 755 /etc/systemd/system/dpm.service
 systemctl daemon-reload
-systemctl start pm
-systemctl enable pm
+systemctl start dpm
+systemctl enable dpm
 ```
 
 ---
@@ -124,12 +178,31 @@ systemctl enable pm
 Das Webinterface ist danach erreichbar unter:
 
 ```
-http://localhost:3000
+http://localhost:3030
 ```
 
 (Der Port kann in der Datei `index.js` angepasst werden.)
+<br>
+## Login
+Der initiale Benutzername und das Passwort sind:
+
+Benutzer: admin <br>
+Passwort: admin
+
+<br><br>
+---
+## Hinzufügen eines servers
+
+Um dem Patchmanagement einen neuen Server hinzuzufügen:
+
+1. Im Webfrontend anmelden
+2. Button "Bootstrap kopieren" benutzen
+3. Auf dem Ziel-Server via SSH als root den Bootstrap Befehl einfügen und ausführen
+4. Button "Server hinzufügen" die Ziel IP-Adresse des Servers angeben
+5. Über das Zahnrad (hinter der IP des neuen Servers) einen der Scheduling-Typen zur Sammlung der Daten auswählen
 
 ---
+
 
 ## 🎉 Viel Spaß mit diesem Projekt!
 
