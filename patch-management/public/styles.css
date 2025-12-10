@@ -102,7 +102,7 @@
 }
 
 .popup-content {
-    max-width: 500px;
+    max-width: 1500px;
     max-height: 400px;
     overflow-y: auto;
 }
@@ -157,3 +157,50 @@ pre {
     border-radius: 8px;
     color: #ddd;
 }
+
+.header-container {
+    padding: 20px;
+    background: rgba(30, 30, 30, 0.8);
+    /*background-color: #222;/* /* Heller Hintergrund für den Header-Bereich */
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 800px;
+    max-height: 100px;
+}
+
+.header-container h3 {
+    color: #333;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 10px;
+    margin-top: 0;
+}
+
+/* Der Container für den Codeblock und den Button */
+.codeblock-container {
+    display: flex; /* Flexbox für Code und Button nebeneinander */
+    align-items: center;
+    gap: 10px;
+    background-color: #282a36; /* Dunkler Hintergrund für den Code */
+    border-radius: 6px;
+    overflow: hidden; /* Wichtig für abgerundete Ecken des Pre-Tags */
+    position: relative;
+    padding-right: 120px; /* Platz für den Button */
+}
+
+/* Der eigentliche Code-Block */
+.codeblock {
+    flex-grow: 1; /* Lässt den Code den gesamten Platz einnehmen */
+    background-color: transparent; /* Transparenter Hintergrund, da er vom Container kommt */
+    color: #f8f8f2; /* Helle Schriftfarbe */
+    padding: 15px;
+    margin: 0; /* Wichtig, um Ränder des <pre> zu entfernen */
+    overflow-x: auto; /* Erlaubt horizontales Scrollen bei sehr langen Befehlen */
+    font-family: 'Fira Code', 'Consolas', 'Monospace', monospace; /* Monospace Schriftart */
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap; /* Erlaubt Zeilenumbruch, falls der Befehl zu lang wird */
+}
+
+
+
