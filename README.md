@@ -1,6 +1,6 @@
 # 🛠️ DPM – Debian Patch Management
 
-Ein simples, zentrales Patchmanagement-System für Debian-Server im geschützten Homelab.
+Ein simples, zentrales Patchmanagement-System für Debian-Server.
 
 ![DPM Screenshot](https://github.com/bmetallica/dpm/blob/main/utils/sc.png)
 
