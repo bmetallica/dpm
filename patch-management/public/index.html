@@ -168,7 +168,79 @@
     <script>
         let ws;
         let currentServerRow; // Speichert die IP und ID des aktuell ausgewählten Servers
+function makeDraggable(popupContent) {
+    const header = popupContent.querySelector('h2');
+    if (!header) return;
 
+    header.style.cursor = 'move';
+    header.style.userSelect = 'none';
+    header.addEventListener('mousedown', startDrag);
+}
+
+function startDrag(e) {
+    // Ändere dies: Greife das äußerste .popup-Element
+    draggedElement = e.target.closest('.popup');
+
+    if (!draggedElement) return;
+
+    const rect = draggedElement.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+
+    // *** WICHTIGSTE ANPASSUNG: Entferne die CSS-Zentrierung! ***
+    draggedElement.style.transform = 'none';
+
+    // Setze die aktuelle Position als absolute left/top Werte,
+    // damit das Verschieben nahtlos beginnt
+    draggedElement.style.left = rect.left + 'px';
+    draggedElement.style.top = rect.top + 'px';
+
+    // Stelle sicher, dass es 'fixed' oder 'absolute' ist
+    draggedElement.style.position = 'fixed';
+
+    draggedElement.style.opacity = '0.8';
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDrag);
+}
+
+function drag(e) {
+    if (!draggedElement) return;
+
+    let newX = e.clientX - offsetX;
+    let newY = e.clientY - offsetY;
+
+    // Begrenzung auf Browserfenster
+    const maxX = window.innerWidth - draggedElement.offsetWidth;
+    const maxY = window.innerHeight - draggedElement.offsetHeight;
+
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+
+    // Die Positionierung funktioniert jetzt, da 'transform' in startDrag entfernt wurde
+    draggedElement.style.left = newX + 'px';
+    draggedElement.style.top = newY + 'px';
+    // draggedElement.style.transform = 'none'; // <- Diese Zeile ist jetzt nicht mehr nötig
+}
+
+function stopDrag() {
+    if (draggedElement) {
+        draggedElement.style.opacity = '1';
+        draggedElement = null;
+    }
+    document.removeEventListener('mousemove', drag);
+    document.removeEventListener('mouseup', stopDrag);
+}
+
+// Initialisiere beim Laden
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.popup-content').forEach(popup => {
+        makeDraggable(popup);
+    });
+});
+
+
+
+        
         // --- NEUE FUNKTIONEN FÜR SERVER HINZUFÜGEN ---
 
         function openAddServerPopup() {
