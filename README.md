@@ -29,6 +29,16 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
   * Automatisierter Key-Transfer: Das System kopiert den SSH Public Key automatisch auf den Zielserver, um die Grundlage für passwortloses Management zu schaffen.
 
   * Passwort-Härtung: Sofortige und automatische Änderung des SSH-Passworts auf dem Zielserver zu einem zufälligen, kryptografisch sicheren Wert nach erfolgreichem Key-Transfer.
+
+  * Automatische Einstufung von Aktualisierungsdringlichkeit in 3 Stufen, auf grundlage der CVEs von security-tracker.debian.org
+
+| Prioritätslevel | Visuelle Bedeutung | Beschreibung |
+| :---: | :---: | :--- |
+| **HIGH** | &#x1F534; **ROT** | **Hohes Risiko.** Erfordert sofortige Aufmerksamkeit und Behebung. |
+| **MEDIUM** | &#x1F7E0; **ORANGE/GELB** | **Mittleres Risiko.** Sollte zeitnah behoben werden, kann zu signifikanten Problemen führen. |
+| **END-OF-LIFE** (oder **EOL**) | &#x26AA; **GRAU** | **Ende der Lebensdauer.** Die betroffene Software oder Komponente wird nicht mehr gewartet oder erhält keine Sicherheitsupdates mehr. |
+
+  
 <br>
 
 🚀 Update-Aktionen
@@ -72,10 +82,10 @@ cd /opt/
 git clone https://github.com/bmetallica/dpm.git
 ```
 
-### 2. `sshpass` installieren
+### 2. `sshpass` `curl` und `jq` installieren
 
 ```bash
-apt install sshpass
+apt install sshpass curl jq
 ```
 
 ### 3. SSH-Schlüssel erstellen (als root)
@@ -136,8 +146,44 @@ CREATE TABLE IF NOT EXISTS public.users
 
 TABLESPACE pg_default;
 
-ALTER TABLE IF EXISTS public.users
-    OWNER to postgres;
+
+CREATE TABLE IF NOT EXISTS public.debian_cve
+(
+    cve_id character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    package_name character varying(100) COLLATE pg_catalog."default" NOT NULL,
+    distro_name character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    fixed_version character varying(100) COLLATE pg_catalog."default",
+    repository_version character varying(100) COLLATE pg_catalog."default",
+    current_status character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    priority_level character varying(50) COLLATE pg_catalog."default",
+    priority_color character varying(10) COLLATE pg_catalog."default",
+    description text COLLATE pg_catalog."default",
+    last_modified timestamp with time zone NOT NULL DEFAULT now(),
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT debian_cve_pkey PRIMARY KEY (cve_id, package_name, distro_name)
+)
+
+TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_debian_cve_id
+    ON public.debian_cve USING btree
+    (cve_id COLLATE pg_catalog."default" ASC NULLS LAST)
+    WITH (fillfactor=100, deduplicate_items=True)
+    TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_debian_cve_pkg_status
+    ON public.debian_cve USING btree
+    (package_name COLLATE pg_catalog."default" ASC NULLS LAST, current_status COLLATE pg_catalog."default" ASC NULLS LAST)
+    WITH (fillfactor=100, deduplicate_items=True)
+    TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_debian_cve_priority
+    ON public.debian_cve USING btree
+    (priority_level COLLATE pg_catalog."default" ASC NULLS LAST)
+    WITH (fillfactor=100, deduplicate_items=True)
+    TABLESPACE pg_default;
+
+
 ```
 
 ---
@@ -170,6 +216,27 @@ systemctl daemon-reload
 systemctl start dpm
 systemctl enable dpm
 ```
+
+---
+
+## 🛡️ CVE-Import
+Datenbank mit aktuellen CVEś füllen und cron zum aktualisieren
+
+```bash
+chmod +x /opt/dpm/patch-management/cve.sh
+
+#Initiales befüllen
+/opt/dpm/patch-management/cve.sh
+
+crontab zum aktualisieren der CVEs täglich um 1:00Uhr
+
+crontab -e
+
+* 1 * * * /opt/dpm/patch-management/cve.sh > /dev/null 2>&1 
+
+
+```
+
 
 ---
 
