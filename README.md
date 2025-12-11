@@ -15,6 +15,8 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
 
   * Wichtige Systemmetriken: Erfassung von Host-Informationen (System-OS) und freiem Root-Speicherplatz.
 
+  * Einfache SSH-WEB Konsole zur verbindung auf die Zielsysteme
+
 <br>
 
 ⏰ Zeitsteuerung und Automatisierung
@@ -85,7 +87,7 @@ git clone https://github.com/bmetallica/dpm.git
 ### 2. `sshpass` `curl` und `jq` installieren
 
 ```bash
-apt install sshpass curl jq
+apt install sshpass curl jq expect
 ```
 
 ### 3. SSH-Schlüssel erstellen (als root)
@@ -99,7 +101,7 @@ ssh-keygen
 ```bash
 cd /opt/dpm/patch-management
 npm init -y
-npm install express pg ws bcrypt node-cron express-session
+npm install express pg ws bcrypt node-cron express-session node-pty xterm xterm-addon-fit ssh2
 ```
 
 ---
