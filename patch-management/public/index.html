@@ -45,7 +45,7 @@
                     <th>Root Free</th>
                     <th>Last Run</th>
                     <th>Aktion</th>
-                    <th width=30px>l&ouml;schen</th>
+                    <th width=10px>l&ouml;schen</th>
                     <th>Kommentar</th>
                 </tr>
             </thead>
@@ -168,6 +168,15 @@
     <script>
         let ws;
         let currentServerRow; // Speichert die IP und ID des aktuell ausgewählten Servers
+
+
+        // ========== DRAG & DROP FUNKTIONALITÄT FÜR POPUPS ==========
+// Füge dies direkt nach dem <script> Tag ein
+
+let draggedElement = null;
+let offsetX = 0;
+let offsetY = 0;
+
 function makeDraggable(popupContent) {
     const header = popupContent.querySelector('h2');
     if (!header) return;
@@ -239,8 +248,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-
-        
         // --- NEUE FUNKTIONEN FÜR SERVER HINZUFÜGEN ---
 
         function openAddServerPopup() {
@@ -473,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (parseInt(row.pu) >= 1) tr.classList.add('highlight-row');
 
                 tr.innerHTML = `
-                    <td>${row.server} <span style="cursor: pointer; margin-left: 5px;" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}' })">⚙️</span></td>
+                    <td>${row.server} <span style="cursor: pointer; margin-left: 5px;" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}' })">⚙️</span> <button class="action-button" style="padding: 2px 8px; font-size: 12px;" onclick="openRemoteConsole('${row.server}')">🖥️ Console</button></td>
                     <td>${row.sys}</td>
                     <td>
                         <textarea onchange="saveText(${row.id}, 'zus', this.value)">${row.zus}</textarea>
@@ -523,7 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Server löschen-Button hinzufügen
-            actionButtons += `<td ><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td>`;
+            actionButtons += `<td><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td>`;
 
             return actionButtons;
         }
@@ -674,6 +681,281 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 3000);
             } else {
                 loadZustand();
+            }
+        }
+
+        // --- REMOTE CONSOLE (SSH) FUNKTIONEN ---
+
+        let sshSocket = null;
+        let currentSSHHost = '';
+        let terminalInstance = null;
+
+        // Lade xterm.js von lokalen node_modules
+        function loadXtermLibraries() {
+            return Promise.all([
+                new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = '/node_modules/xterm/lib/xterm.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                }),
+                new Promise((resolve, reject) => {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = '/node_modules/xterm/css/xterm.css';
+                    link.onload = resolve;
+                    link.onerror = reject;
+                    document.head.appendChild(link);
+                })
+            ]);
+        }
+
+        async function openRemoteConsole(host) {
+            console.log('[CONSOLE] Öffne Remote Console für:', host);
+            currentSSHHost = host;
+            document.getElementById('remoteConsolePopup').style.display = 'block';
+            document.getElementById('remoteConsoleTitle').textContent = `Remote Console: ${host}`;
+            document.getElementById('sshUsername').value = '';
+            document.getElementById('sshPassword').value = '';
+            document.getElementById('sshAuthStatus').style.display = 'none';
+            document.getElementById('authForm').style.display = 'block';
+
+            try {
+                // Lade xterm.js wenn noch nicht geladen
+                if (typeof Terminal === 'undefined') {
+                    console.log('[CONSOLE] Lade xterm.js...');
+                    await loadXtermLibraries();
+                }
+
+                // Initialisiere Terminal
+                const container = document.getElementById('terminalContainer');
+                container.innerHTML = '';
+
+                if (typeof Terminal !== 'undefined') {
+                    // Nutze xterm.js wenn verfügbar
+                    terminalInstance = new Terminal({
+                        cols: 120,
+                        rows: 30,
+                        theme: {
+                            background: '#000000',
+                            foreground: '#00ff00'
+                        },
+                        fontFamily: '"Courier New", monospace',
+                        fontSize: 12,
+                        cursorBlink: true
+                    });
+                    
+                    terminalInstance.open(container);
+                    terminalInstance.write('Bereit zur Verbindung. Bitte Anmeldedaten eingeben.\r\n');
+                    console.log('[CONSOLE] xterm.js Terminal initialisiert');
+                } else {
+                    // Fallback auf einfaches HTML-Terminal
+                    console.log('[CONSOLE] xterm.js nicht verfügbar, nutze HTML-Terminal');
+                    terminalInstance = createSimpleTerminal();
+                }
+                
+            } catch (error) {
+                console.error('[CONSOLE] Fehler beim Laden von xterm.js:', error);
+                // Fallback auf einfaches Terminal
+                terminalInstance = createSimpleTerminal();
+            }
+        }
+
+        function createSimpleTerminal() {
+            const container = document.getElementById('terminalContainer');
+            container.innerHTML = '';
+
+            const screen = document.createElement('div');
+            screen.id = 'terminalScreen';
+            screen.style.cssText = `
+                background: #000;
+                color: #0f0;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                padding: 10px;
+                overflow-y: auto;
+                height: calc(100% - 35px);
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                border-bottom: 1px solid #333;
+                line-height: 1.4;
+            `;
+
+            const input = document.createElement('input');
+            input.id = 'terminalInput';
+            input.type = 'text';
+            input.style.cssText = `
+                background: #000;
+                color: #0f0;
+                border: none;
+                outline: none;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                padding: 5px;
+                width: 100%;
+                box-sizing: border-box;
+            `;
+            input.placeholder = 'Tippe Befehl ein und drücke Enter...';
+
+            container.appendChild(screen);
+            container.appendChild(input);
+
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const cmd = input.value + '\n';
+                    if (sshSocket && sshSocket.readyState === WebSocket.OPEN) {
+                        sshSocket.send(JSON.stringify({ type: 'input', data: cmd }));
+                    }
+                    input.value = '';
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'c') {
+                    e.preventDefault();
+                    if (sshSocket && sshSocket.readyState === WebSocket.OPEN) {
+                        sshSocket.send(JSON.stringify({ type: 'input', data: '\x03' }));
+                    }
+                }
+                if (e.ctrlKey && e.key === 'l') {
+                    e.preventDefault();
+                    screen.textContent = '';
+                }
+            });
+
+            return {
+                write: (text) => {
+                    const screen = document.getElementById('terminalScreen');
+                    if (screen) {
+                        screen.textContent += text;
+                        screen.scrollTop = screen.scrollHeight;
+                    }
+                },
+                clear: () => {
+                    const screen = document.getElementById('terminalScreen');
+                    if (screen) {
+                        screen.textContent = '';
+                    }
+                },
+                focus: () => {
+                    const input = document.getElementById('terminalInput');
+                    if (input) {
+                        input.focus();
+                    }
+                }
+            };
+        }
+
+        function closeRemoteConsole() {
+            console.log('[CONSOLE] Schließe Remote Console');
+            document.getElementById('remoteConsolePopup').style.display = 'none';
+            if (sshSocket) {
+                console.log('[CONSOLE] Schließe WebSocket');
+                sshSocket.close();
+                sshSocket = null;
+            }
+            if (terminalInstance && terminalInstance.dispose) {
+                terminalInstance.dispose();
+            }
+            terminalInstance = null;
+            console.log('[CONSOLE] Remote Console geschlossen');
+        }
+
+        async function connectSSHTerminal() {
+            const username = document.getElementById('sshUsername').value.trim();
+            const password = document.getElementById('sshPassword').value;
+            const statusEl = document.getElementById('sshAuthStatus');
+
+            if (!username || !password) {
+                statusEl.textContent = 'Benutzername und Passwort erforderlich.';
+                statusEl.style.display = 'block';
+                return;
+            }
+
+            if (!terminalInstance) {
+                console.error('[SSH] Terminal noch nicht initialisiert');
+                statusEl.textContent = 'Terminal-Fehler. Bitte Fenster neu öffnen.';
+                statusEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/api/ssh-terminal/${currentSSHHost}/${encodeURIComponent(username)}`;
+
+                console.log('[SSH] Verbinde zu:', wsUrl);
+
+                if (terminalInstance.clear) {
+                    terminalInstance.clear();
+                } else if (terminalInstance.write) {
+                    terminalInstance.write('\x1Bc'); // ANSI clear screen
+                }
+                
+                terminalInstance.write(`Verbinde zu ${username}@${currentSSHHost}...\r\n`);
+
+                sshSocket = new WebSocket(wsUrl);
+
+                sshSocket.onopen = () => {
+                    console.log('[SSH] WebSocket geöffnet');
+                    sshSocket.send(JSON.stringify({ type: 'auth', password: password }));
+                    document.getElementById('authForm').style.display = 'none';
+                    terminalInstance.write('Authentifizierung gesendet...\r\n');
+                    
+                    // Wenn xterm.js: registriere keyboard-Input
+                    if (terminalInstance.onData) {
+                        terminalInstance.onData((data) => {
+                            if (sshSocket && sshSocket.readyState === WebSocket.OPEN) {
+                                sshSocket.send(JSON.stringify({ type: 'input', data: data }));
+                            }
+                        });
+                    } else if (terminalInstance.focus) {
+                        terminalInstance.focus();
+                    }
+
+                    setTimeout(() => {
+                        if (terminalInstance && terminalInstance.focus) {
+                            terminalInstance.focus();
+                        }
+                    }, 500);
+                };
+
+                sshSocket.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'output' && terminalInstance) {
+                        terminalInstance.write(msg.data);
+                    } else if (msg.type === 'error') {
+                        console.error('[SSH] Server-Fehler:', msg.data);
+                        if (terminalInstance) {
+                            terminalInstance.write(`\r\n[FEHLER] ${msg.data}\r\n`);
+                        }
+                        statusEl.textContent = msg.data;
+                        statusEl.style.display = 'block';
+                        document.getElementById('authForm').style.display = 'block';
+                    }
+                };
+
+                sshSocket.onerror = (err) => {
+                    console.error('[SSH] WebSocket-Fehler:', err);
+                    if (terminalInstance) {
+                        terminalInstance.write('\r\n[FEHLER] Verbindungsfehler\r\n');
+                    }
+                    statusEl.textContent = 'WebSocket-Verbindungsfehler';
+                    statusEl.style.display = 'block';
+                    document.getElementById('authForm').style.display = 'block';
+                };
+
+                sshSocket.onclose = () => {
+                    console.log('[SSH] WebSocket geschlossen');
+                    if (terminalInstance) {
+                        terminalInstance.write('\r\n[INFO] Verbindung geschlossen.\r\n');
+                    }
+                    document.getElementById('authForm').style.display = 'block';
+                };
+            } catch (error) {
+                console.error('[SSH] Fehler:', error);
+                statusEl.textContent = `Fehler: ${error.message}`;
+                statusEl.style.display = 'block';
             }
         }
 
@@ -1016,7 +1298,24 @@ async function deleteUser(id, username) {
     }
 }
 
-
     </script>
+
+    <!-- SSH Remote Console Modal -->
+    <div id="remoteConsolePopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 id="remoteConsoleTitle" style="margin: 0;">Remote Console</h2>
+                <span id="closeRemoteConsole" onclick="closeRemoteConsole()" style="cursor: pointer; font-size: 28px; color: #ccc;">&times;</span>
+            </div>
+            <div id="terminalContainer" style="background: #000;"></div>
+            <div id="authForm" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="sshUsername" placeholder="SSH Benutzername" required style="padding: 8px; flex: 0 1 auto;">
+                <input type="password" id="sshPassword" placeholder="SSH Passwort" required style="padding: 8px; flex: 0 1 auto;">
+                <button class="action-button" onclick="connectSSHTerminal()" style="flex: 0 0 auto;">Verbinden</button>
+                <p id="sshAuthStatus" style="color: #ff6b6b; margin: 0; font-size: 12px; width: 100%; display: none;"></p>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
