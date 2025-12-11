@@ -202,5 +202,73 @@ pre {
     white-space: pre-wrap; /* Erlaubt Zeilenumbruch, falls der Befehl zu lang wird */
 }
 
+/* --- XTERM TERMINAL STYLING --- */
+#terminalContainer {
+    background: #000;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+#terminalContainer .xterm {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+#authForm input {
+    padding: 8px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background-color: #222;
+    color: #fff;
+}
+
+#authForm input::placeholder {
+    color: #999;
+}
+
+#remoteConsolePopup {
+    top: 50% !important;
+    left: 50% !important;
+    width: 95vw !important;
+    height: 95vh !important;
+    max-width: 1400px !important;
+    max-height: 900px !important;
+    transform: translate(-50%, -50%) !important;
+    padding: 0 !important;
+}
+
+#remoteConsolePopup .popup-content {
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 15px !important;
+}
+
+#terminalContainer {
+    flex: 1 !important;
+    overflow: hidden !important;
+    min-height: 500px;
+}
+
+#authForm {
+    flex-shrink: 0;
+    padding: 10px 0 0 0 !important;
+    margin-top: 10px;
+    border-top: 1px solid #333;
+}
+
+#sshAuthStatus {
+    font-size: 12px;
+    padding: 8px;
+    border-radius: 4px;
+    background-color: #3d0a0a;
+}
 
 
