@@ -65,7 +65,7 @@
         <div class="popup-content">
             <span id="closeSelectPopup" onclick="closeSelectPopup()">&times;&nbsp;&nbsp;</span>
             <h2 id="selectUpdateServerTitle">Updates für Server:</h2>
-            
+
             <table id="updateTable">
                 <thead>
                     <tr>
@@ -78,7 +78,7 @@
                 <tbody id="updateCheckboxes">
                     </tbody>
             </table>
-            
+
             <button class="action-button" onclick="startSelectedUpdate()">Ausgewählte Updates installieren</button>
             <p id="selectedUpdateError" style="color: red; display: none;">Bitte wählen Sie mindestens ein Update aus.</p>
         </div>
@@ -100,7 +100,7 @@
             <h2 id="scheduleServerTitle">Intervall für Server:</h2>
             <input type="hidden" id="scheduleServerId">
             <input type="hidden" id="scheduleServerIp">
-            
+
             <div class="schedule-options">
                 <label>
                     <input type="radio" name="scheduleType" value="hourly" onchange="toggleScheduleOptions()"> Stündlich
@@ -114,7 +114,7 @@
                     <input type="time" id="weeklyTime" value="04:00" disabled> Uhr
                 </label>
             </div>
-            
+
             <button class="action-button" onclick="saveSchedule()">Intervall speichern</button>
             <p id="scheduleStatus" style="color: green; margin-top: 10px;"></p>
         </div>
@@ -194,7 +194,7 @@
 
             errorDisplay.style.display = 'none';
             closeAddServerPopup();
-            
+
             // Führt zwei Aktionen nacheinander aus: addServer und connectSSH
             try {
                 // 1. Server in die DB einfügen
@@ -203,10 +203,10 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ip })
                 });
-                
+
                 // 2. Direkt "Connect SSH" ausführen (startet die Datensammlung)
                 await executeAction(ip, 'connectSSH');
-                
+
                 alert(`Server ${ip} wurde hinzugefügt und Datensammlung gestartet. Bitte warten Sie einen Moment auf die Aktualisierung.`);
                 loadZustand();
             } catch (error) {
@@ -215,25 +215,25 @@
                 loadZustand();
             }
         }
-        
+
         // --- NEUE FUNKTIONEN FÜR SCHEDULING ---
-        
+
         function openSchedulePopup(id, ip, schedule) {
             document.getElementById('scheduleServerId').value = id;
             document.getElementById('scheduleServerIp').value = ip;
             document.getElementById('scheduleServerTitle').textContent = `Intervall für Server: ${ip}`;
             document.getElementById('scheduleStatus').textContent = '';
-            
+
             // Setze die Radiobuttons basierend auf dem aktuellen Schedule
             let type = schedule.type || 'hourly';
             let time = schedule.time || '03:00';
-            
+
             document.querySelector(`input[name="scheduleType"][value="${type}"]`).checked = true;
-            
+
             // Setze die Uhrzeiten
             document.getElementById('dailyTime').value = time;
             document.getElementById('weeklyTime').value = time;
-            
+
             toggleScheduleOptions(); // Aktiviert/Deaktiviert die Zeitfelder
             document.getElementById('schedulePopup').style.display = 'block';
         }
@@ -241,11 +241,11 @@
         function closeSchedulePopup() {
             document.getElementById('schedulePopup').style.display = 'none';
         }
-        
+
         function toggleScheduleOptions() {
             const dailyChecked = document.querySelector('input[name="scheduleType"][value="daily"]').checked;
             const weeklyChecked = document.querySelector('input[name="scheduleType"][value="weekly"]').checked;
-            
+
             document.getElementById('dailyTime').disabled = !dailyChecked;
             document.getElementById('weeklyTime').disabled = !weeklyChecked;
         }
@@ -255,33 +255,33 @@
             const ip = document.getElementById('scheduleServerIp').value;
             const type = document.querySelector('input[name="scheduleType"]:checked').value;
             let time = '';
-            
+
             if (type === 'daily') {
                 time = document.getElementById('dailyTime').value;
             } else if (type === 'weekly') {
                 time = document.getElementById('weeklyTime').value;
             }
-            
+
             try {
                 await fetch('/api/schedule', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, ip, type, time })
                 });
-                
+
                 document.getElementById('scheduleStatus').textContent = 'Intervall erfolgreich gespeichert.';
                 // Optional: Popup nach kurzer Zeit schließen oder Tabelle neu laden
                 setTimeout(() => {
                     closeSchedulePopup();
                     loadZustand();
                 }, 1500);
-                
+
             } catch (error) {
                 document.getElementById('scheduleStatus').textContent = 'Fehler beim Speichern des Intervalls.';
                 console.error(error);
             }
         }
-        
+
         // --- BESTEHENDE FUNKTIONEN (kleine Anpassung in renderAction) ---
 
         // Funktion zum Öffnen des Log-Popups
@@ -296,33 +296,71 @@
         }
 
         // NEU: Funktion zum Öffnen des Select-Update-Popups mit Tabellenerstellung
-        function openSelectPopup(ip, updates, id) {
+  async function openSelectPopup(ip, updates, id) {
             currentServerRow = { ip, id };
             document.getElementById('selectUpdateServerTitle').textContent = `Updates für Server: ${ip}`;
-            
-            const tableBody = document.getElementById('updateCheckboxes');
-            tableBody.innerHTML = '';
-            
-            const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
 
+            const tableBody = document.getElementById('updateCheckboxes');
+            tableBody.innerHTML = '<tr><td colspan="4">Lade Schwachstellendaten...</td></tr>';
+
+            // Schwachstellendaten vom Server abrufen
+            let vulnerabilities = [];
+            try {
+                const response = await fetch(`/api/vulnerableUpdates/${id}`);
+                const data = await response.json();
+                if (data.success && data.vulnerabilities) {
+                    vulnerabilities = data.vulnerabilities;
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Schwachstellendaten:', error);
+            }
+
+            // Tabelle leeren und neu befüllen
+            tableBody.innerHTML = '';
+
+            const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
 
             updates.forEach((updateLine) => {
                 const match = updateLine.match(updateRegex);
-                
+
                 let packageName = 'Unbekannt';
                 let oldVersion = 'N/A';
                 let newVersion = 'N/A';
-                let updateValue = updateLine.split(' ')[0]; 
+                let updateValue = updateLine.split(' ')[0];
 
                 if (match) {
                     packageName = match[1];
-                    newVersion = match[2].split(' ')[0]; 
+                    newVersion = match[2].split(' ')[0];
                     oldVersion = match[3];
-                    updateValue = packageName; 
+                    updateValue = packageName;
+                }
+
+                // Prüfen, ob es eine Schwachstelle für dieses Paket gibt
+                const vulnerability = vulnerabilities.find(v => v.package_name === packageName);
+
+                // Hintergrundfarbe basierend auf der Risikostufe festlegen
+                let backgroundColor = '#000000'; // Grün als Standard (kein bekanntes Risiko)
+                let titleText = 'Keine bekannten Schwachstellen';
+
+                if (vulnerability) {
+                    const priority = vulnerability.priority_level ? vulnerability.priority_level.toLowerCase() : '';
+
+                    if (priority === 'high') {
+                        backgroundColor = '#C03030'; // Rot
+                        titleText = `CVE: ${vulnerability.cve_id} - HIGH RISK - ${vulnerability.description || ''}`;
+                    } else if (priority === 'medium') {
+                        backgroundColor = '#E58022'; // Orange/Gelb
+                        titleText = `CVE: ${vulnerability.cve_id} - MEDIUM RISK - ${vulnerability.description || ''}`;
+                    } else if (priority === 'end-of-life' || priority === 'eol') {
+                        backgroundColor = '#ACA6A6'; // Grau
+                        titleText = `CVE: ${vulnerability.cve_id} - END-OF-LIFE - ${vulnerability.description || ''}`;
+                    }
                 }
 
                 const tr = document.createElement('tr');
-                
+                tr.style.backgroundColor = backgroundColor;
+                tr.title = titleText;
+
                 tr.innerHTML = `
                     <td>
                         <input type="checkbox" name="selectedUpdate" value="${updateValue}" checked>
@@ -331,7 +369,7 @@
                     <td>${oldVersion}</td>
                     <td>${newVersion}</td>
                 `;
-                
+
                 tableBody.appendChild(tr);
             });
 
@@ -342,7 +380,7 @@
         function closeSelectPopup() {
             document.getElementById('selectedUpdateError').style.display = 'none';
             document.getElementById('selectUpdatePopup').style.display = 'none';
-            currentServerRow = null; 
+            currentServerRow = null;
         }
 
         // Funktion zum automatischen Scrollen nach unten
@@ -466,7 +504,7 @@
                 body: JSON.stringify({ ip, action: 'updateServer' })
             });
         }
-        
+
         // Funktion, die durch den "Select Updates" Button aufgerufen wird
         async function selupd(ip, id) {
             const response = await fetch(`/api/serverupdates/${id}`);
@@ -484,12 +522,12 @@
             const selectedCheckboxes = document.querySelectorAll('#updateCheckboxes input[name="selectedUpdate"]:checked');
             const packagesToUpdate = Array.from(selectedCheckboxes).map(cb => cb.value);
             const errorDisplay = document.getElementById('selectedUpdateError');
-            
+
             if (packagesToUpdate.length === 0) {
                 errorDisplay.style.display = 'block';
                 return;
             }
-            
+
             if (!currentServerRow || !currentServerRow.ip) {
                 console.error("Fehler: Serverinformationen fehlen.");
                 alert("Fehler: Serverinformationen konnten nicht abgerufen werden.");
@@ -497,12 +535,12 @@
                 return;
             }
 
-            const ip = currentServerRow.ip; 
+            const ip = currentServerRow.ip;
 
             errorDisplay.style.display = 'none';
-            closeSelectPopup(); 
+            closeSelectPopup();
 
-            openPopup(); 
+            openPopup();
 
             ws = new WebSocket(`ws://${location.host}`);
 
@@ -521,16 +559,16 @@
                 const log = document.getElementById('updateLog');
                 log.textContent += 'Verbindung geschlossen.';
                 scrollToBottom();
-                location.reload();  
+                location.reload();
             };
-            
+
             try {
                 await fetch('/api/action', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({  
-                        ip,  
-                        action: 'updateSelected', 
+                    body: JSON.stringify({
+                        ip,
+                        action: 'updateSelected',
                         packages: packagesToUpdate
                     })
                 });
@@ -554,16 +592,16 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ip, action })
             });
-            
+
             // Bei connectSSH muss man kurz warten, bis das Skript durchgelaufen ist, bevor man neu lädt
             if (action === 'connectSSH') {
                 // Wir schließen das Log nach 3 Sekunden und laden neu, da das Backend-Skript nicht mit dem WebSocket verbunden ist
                 setTimeout(() => {
                     closePopup();
-                    loadZustand(); 
-                }, 3000); 
+                    loadZustand();
+                }, 3000);
             } else {
-                loadZustand(); 
+                loadZustand();
             }
         }
 
