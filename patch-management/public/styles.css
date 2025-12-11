@@ -134,7 +134,7 @@ pre {
 }
 
 .del-button img {
-    width: 100%;                    /* Bild passt sich an die Breite des Buttons an */
+    width: 50%;                    /* Bild passt sich an die Breite des Buttons an */
     height: auto;                   /* Höhe wird proportional zur Breite angepasst */
 }
 
