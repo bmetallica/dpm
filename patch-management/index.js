@@ -3,11 +3,13 @@
 const express = require('express');
 const { Pool } = require('pg');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const WebSocket = require('ws');
 const path = require('path');
 const cron = require('node-cron');
 const crypto = require('crypto'); // Für zufällige Passwörter
+const os = require('os');
+const { spawn: spawnPty } = require('node-pty');
 
 const session = require('express-session');
 const bcrypt = require('bcrypt');
@@ -128,6 +130,7 @@ app.use(express.urlencoded({ extended: true })); // Optional, falls Form-Daten g
 
 // 3. Statische Dateien (Muss VOR requireLogin stehen, um Assets zu laden)
 app.use(express.static('public'));
+app.use('/node_modules', express.static('node_modules')); // Für xterm.js und andere Module
 
 // 4. Login-Prüfung (Schützt alle nachfolgenden Routen)
 app.use(requireLogin);
@@ -1090,11 +1093,142 @@ const server = app.listen(port, () => {
     console.log(`Patch-Management Server läuft auf http://localhost:${port}`);
 });
 
+// --- SSH2 REMOTE CONSOLE HANDLER ---
+
+const sshSessions = new Map(); // Speichert aktive SSH-Sessions
+
+function createSSHTerminal(socket, host, username, password) {
+    console.log(`[SSH] Starte SSH-Session für ${username}@${host}`);
+    
+    // Nutze node-pty für echten PTY-Support
+    const ptyProcess = spawnPty('sshpass', 
+        [
+            '-p', password,
+            'ssh',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'LogLevel=quiet',
+            '-o', 'PasswordAuthentication=yes',
+            '-o', 'PubkeyAuthentication=no',
+            '-tt',
+            `${username}@${host}`
+        ],
+        {
+            name: 'xterm-256color',
+            cols: 120,
+            rows: 30,
+            cwd: process.env.HOME,
+            env: Object.assign({}, process.env, {
+                TERM: 'xterm-256color',
+                LANG: 'en_US.UTF-8'
+            })
+        }
+    );
+
+    const sessionId = `${host}-${Date.now()}`;
+    sshSessions.set(socket, { 
+        proc: ptyProcess, 
+        sessionId
+    });
+
+    console.log(`[SSH] PTY-Prozess gestartet für ${sessionId}`);
+
+    // Sende initialen Output
+    socket.send(JSON.stringify({ 
+        type: 'output', 
+        data: `Verbunden zu ${username}@${host}\n`
+    }));
+
+    // Handle alle Daten vom PTY
+    ptyProcess.onData((data) => {
+        console.log(`[SSH-data] ${data.substring(0, 50)}`);
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ 
+                type: 'output', 
+                data: data
+            }));
+        }
+    });
+
+    // Handle close
+    ptyProcess.onExit((event) => {
+        console.log(`[SSH] PTY-Prozess geschlossen für ${sessionId}`);
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ 
+                type: 'output', 
+                data: `\n[Verbindung geschlossen]\n`
+            }));
+        }
+        sshSessions.delete(socket);
+    });
+
+    // Handle Fehler (wenn sshpass nicht vorhanden)
+    ptyProcess.on?.('error', (err) => {
+        console.error(`[SSH] PTY-Fehler für ${sessionId}:`, err);
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ 
+                type: 'error', 
+                data: `Fehler: ${err.message}`
+            }));
+        }
+        sshSessions.delete(socket);
+    });
+}
+
 // WebSocket-Handler
 const wss = new WebSocket.Server({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, socket => {
-        wss.emit('connection', socket, request);
-    });
+    const url = request.url;
+    
+    // SSH Remote Console WebSocket
+    if (url.startsWith('/api/ssh-terminal/')) {
+        const parts = url.split('/');
+        const host = parts[3];
+        const username = decodeURIComponent(parts[4]);
+        
+        wss.handleUpgrade(request, socket, head, (ws) => {
+            // Der Password kommt über die erste WebSocket-Message
+            let passwordReceived = false;
+            
+            ws.on('message', (message) => {
+                try {
+                    const msg = JSON.parse(message.toString());
+                    
+                    if (!passwordReceived && msg.type === 'auth') {
+                        passwordReceived = true;
+                        console.log(`[WS] Auth-Message für ${host}/${username}`);
+                        createSSHTerminal(ws, host, username, msg.password);
+                    } else if (passwordReceived && msg.type === 'input') {
+                        const session = sshSessions.get(ws);
+                        if (session && session.proc) {
+                            // Input direkt in den PTY schreiben
+                            console.log(`[WS] Input erhalten: ${msg.data.substring(0, 50)}...`);
+                            session.proc.write(msg.data);
+                        } else {
+                            console.warn('[WS] Keine aktive Session für Input');
+                        }
+                    }
+                } catch (e) {
+                    console.error('[WS] Fehler beim Verarbeiten der Nachricht:', e);
+                }
+            });
+            
+            ws.on('close', () => {
+                const session = sshSessions.get(ws);
+                if (session && session.proc) {
+                    session.proc.kill();
+                    sshSessions.delete(ws);
+                }
+            });
+        });
+    } else {
+        // Standard Patch-Management WebSocket (für Updates)
+        wss.handleUpgrade(request, socket, head, socket => {
+            wss.emit('connection', socket, request);
+        });
+    }
 });
