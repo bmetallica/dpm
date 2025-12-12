@@ -109,53 +109,53 @@
 }
 
 #closePopup {
-    position: fixed;
-    top: 10px;
-    right: 20px;
+    position: absolute;
+    top: -5px;
+    right: 5px;
     cursor: pointer;
     font-size: 28px;
     color: #ccc;
-    z-index: 10000;
+    z-index: 10001;
 }
 
 #closeSelectPopup {
-    position: fixed;
-    top: 10px;
-    right: 20px;
+    position: absolute;
+    top: -5px;
+    right: 5px;
     cursor: pointer;
     font-size: 28px;
     color: #ccc;
-    z-index: 10000;
+    z-index: 10001;
 }
 
 #closeChangePasswordPopupBtn {
-    position: fixed;
-    top: 10px;
-    right: 20px;
+    position: absolute;
+    top: -5px;
+    right: 5px;
     cursor: pointer;
     font-size: 28px;
     color: #ccc;
-    z-index: 10000;
+    z-index: 10001;
 }
 
 #closeUserManagementPopupBtn {
-    position: fixed;
-    top: 10px;
-    right: 20px;
+    position: absolute;
+    top: -5px;
+    right: 5px;
     cursor: pointer;
     font-size: 28px;
     color: #ccc;
-    z-index: 10000;
+    z-index: 10001;
 }
 
 #closeSchedulePopupBtn {
-    position: fixed;
-    top: 10px;
-    right: 20px;
+    position: absolute;
+    top: -5px;
+    right: 5px;
     cursor: pointer;
     font-size: 28px;
     color: #ccc;
-    z-index: 10000;
+    z-index: 10001;
 }
 
 pre {
