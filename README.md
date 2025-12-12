@@ -77,7 +77,9 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
 ## 📦 Schnellinstallation (als root)
 
 ```
-curl -sS https://raw.githubusercontent.com/bmetallica/dpm/refs/heads/main/install.sh | sudo bash
+wget https://raw.githubusercontent.com/bmetallica/dpm/refs/heads/main/install.sh
+chmod +x install.sh
+./install.sh
 ```
 ---
 
