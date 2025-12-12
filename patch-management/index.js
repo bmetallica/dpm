@@ -18,6 +18,10 @@ const saltRounds = 10;
 const app = express();
 const port = 3030;
 
+// ===== KONFIGURATION =====
+const ENABLE_LOGIN = true; // Setze auf 'false', um Login zu deaktivieren und freien Zugriff zu ermöglichen
+const DEFAULT_USERNAME = 'guest'; // Standard-Benutzername wenn Login deaktiviert ist
+
 const GLOBAL_TIMEZONE = 'Europe/Berlin';
 const GLOBAL_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'; // Standardformat
 
@@ -66,16 +70,27 @@ async function initializeAdminUser() {
 }
 
 /**
- * Middleware: Prüft, ob der Benutzer eingeloggt ist.
+ * Middleware: Prüft, ob der Benutzer eingeloggt ist (wenn Login aktiviert ist).
  */
 function requireLogin(req, res, next) {
+    // Falls Login deaktiviert ist: Alle Anfragen erlauben und Standard-Session setzen
+    if (!ENABLE_LOGIN) {
+        if (!req.session.userId) {
+            req.session.userId = -1; // Pseudo-ID für nicht authentifizierte Benutzer
+            req.session.username = DEFAULT_USERNAME;
+            req.session.isAdmin = false;
+        }
+        return next();
+    }
+
+    // Falls Login AKTIVIERT ist: Normale Authentifizierung durchführen
     // 1. ZULÄSSIGE, NICHT GESCHÜTZTE PFADE definieren:
     if (
         req.path === '/api/login' ||
         req.path.startsWith('/api/bootstrap/') ||
         req.path === '/login.html' ||
         req.path === '/' ||
-        req.path === '/index.html' // <<< SICHERHEITSHALBER HINZUFÜGEN
+        req.path === '/index.html'
     ) {
         return next();
     }
@@ -669,8 +684,16 @@ app.post('/api/login', async (req, res) => {
 
 
 app.get('/api/status', (req, res) => {
-    // Session ist hier garantiert geladen, weil requireLogin davor ausgeführt wurde.
-    // req.session ist garantiert NICHT undefined, da requireLogin sonst umgeleitet hätte.
+    // Wenn Login deaktiviert ist: Immer true zurückgeben
+    if (!ENABLE_LOGIN) {
+        return res.json({
+            loggedIn: true,
+            username: DEFAULT_USERNAME,
+            isAdmin: false
+        });
+    }
+
+    // Wenn Login aktiviert ist: Session-Daten prüfen
     res.json({
         loggedIn: true,
         username: req.session.username,
@@ -1255,3 +1278,4 @@ server.on('upgrade', (request, socket, head) => {
         });
     }
 });
+
