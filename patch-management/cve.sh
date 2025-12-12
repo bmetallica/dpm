@@ -12,10 +12,10 @@ FLAT_FILE="/tmp/debian_cve_final_filtered.txt"
 TEMP_SQL_FILE="/tmp/debian_cve_inserts_final_$(date +%s).sql"
 
 # PostgreSQL-Details
-PG_USER="aptdb"
-PG_PASSWORD="aptdb123" 
-PG_HOST="localhost"
-PG_DB="apt"
+PG_USER="USERNAME"
+PG_PASSWORD="PASSWORD" 
+PG_HOST="HOSTNAME"
+PG_DB="DBNAME"
 
 MIN_SIZE_KB=60000 
 
