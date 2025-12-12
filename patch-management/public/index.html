@@ -62,25 +62,35 @@
     </div>
 
     <div id="selectUpdatePopup" class="popup" style="display: none;">
-        <div class="popup-content">
+        <div class="popup-content" style="display: flex; flex-direction: column; height: 100%;">
             <span id="closeSelectPopup" onclick="closeSelectPopup()">&times;&nbsp;&nbsp;</span>
-            <h2 id="selectUpdateServerTitle">Updates für Server:</h2>
+            
+            <!-- Fixed Header -->
+            <div style="position: sticky; top: 0; background: #333; padding: 0 0 15px 0; z-index: 100; border-bottom: 1px solid #555;">
+                <h2 id="selectUpdateServerTitle" style="margin: 0; padding: 15px 0 0 0;">Updates für Server:</h2>
+            </div>
 
-            <table id="updateTable">
-                <thead>
-                    <tr>
-                        <th>Auswahl</th>
-                        <th>Paket</th>
-                        <th>Aktuelle Version</th>
-                        <th>Update auf Version</th>
-                    </tr>
-                </thead>
-                <tbody id="updateCheckboxes">
-                    </tbody>
-            </table>
+            <!-- Scrollable Table Container -->
+            <div style="flex: 1; overflow-y: auto; margin: 15px 0;">
+                <table id="updateTable">
+                    <thead>
+                        <tr>
+                            <th>Auswahl</th>
+                            <th>Paket</th>
+                            <th>Aktuelle Version</th>
+                            <th>Update auf Version</th>
+                        </tr>
+                    </thead>
+                    <tbody id="updateCheckboxes">
+                        </tbody>
+                </table>
+            </div>
 
-            <button class="action-button" onclick="startSelectedUpdate()">Ausgewählte Updates installieren</button>
-            <p id="selectedUpdateError" style="color: red; display: none;">Bitte wählen Sie mindestens ein Update aus.</p>
+            <!-- Fixed Footer -->
+            <div style="position: sticky; bottom: 0; background: #333; padding: 15px 0 0 0; border-top: 1px solid #555;">
+                <button class="action-button" onclick="startSelectedUpdate()">Ausgewählte Updates installieren</button>
+                <p id="selectedUpdateError" style="color: red; display: none; margin-top: 10px;">Bitte wählen Sie mindestens ein Update aus.</p>
+            </div>
         </div>
     </div>
 
@@ -122,7 +132,7 @@
 
     <div id="changePasswordPopup" class="popup" style="display: none;">
     <div class="popup-content">
-        <span onclick="closeChangePasswordPopup()">&times;&nbsp;&nbsp;</span>
+        <span id="closeChangePasswordPopupBtn" onclick="closeChangePasswordPopup()">&times;&nbsp;&nbsp;</span>
         <h2>Passwort ändern</h2>
         <input type="password" id="oldPassword" placeholder="Altes Passwort" required style="margin-bottom: 10px;">
         <input type="password" id="newPassword" placeholder="Neues Passwort" required style="margin-bottom: 10px;">
@@ -134,7 +144,7 @@
 
 <div id="userManagementPopup" class="popup" style="display: none;">
     <div class="popup-content">
-        <span onclick="closeUserManagementPopup()">&times;&nbsp;&nbsp;</span>
+        <span id="closeUserManagementPopupBtn" onclick="closeUserManagementPopup()">&times;&nbsp;&nbsp;</span>
         <h2>👥 Benutzerverwaltung</h2>
 
         <h3>Neuen Benutzer anlegen</h3>
@@ -1316,7 +1326,7 @@ async function loadUsers() {
                 <td>${user.username}</td>
                 <td>${user.is_admin ? 'Ja' : 'Nein'}</td>
                 <td>
-                    <button class="del-button" onclick="deleteUser(${user.id}, '${user.username}')">Löschen</button>
+                    <button class="action-button" style="padding: 6px 12px; font-size: 14px; background-color: #d9534f;" onclick="deleteUser(${user.id}, '${user.username}')">🗑️ Löschen</button>
                 </td>
             `;
             tableBody.appendChild(tr);
