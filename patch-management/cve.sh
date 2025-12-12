@@ -12,7 +12,8 @@ FLAT_FILE="/tmp/debian_cve_final_filtered.txt"
 TEMP_SQL_FILE="/tmp/debian_cve_inserts_final_$(date +%s).sql"
 
 # PostgreSQL-Details
-PG_USER="postgres"
+PG_USER="aptdb"
+PG_PASSWORD="aptdb123" 
 PG_HOST="localhost"
 PG_DB="apt"
 
@@ -24,6 +25,25 @@ cleanup() {
     rm -f "$RAW_FILE" "$FLAT_FILE" "$TEMP_SQL_FILE"
 }
 trap cleanup EXIT
+
+# Hilfsfunktion für psql-Aufrufe mit Passwort
+run_psql() {
+    local sql="$1"
+    if [ -n "$PG_PASSWORD" ]; then
+        PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -c "$sql"
+    else
+        psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -c "$sql"
+    fi
+}
+
+run_psql_file() {
+    local file="$1"
+    if [ -n "$PG_PASSWORD" ]; then
+        PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -f "$file"
+    else
+        psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -f "$file"
+    fi
+}
 
 echo "======================================================================"
 echo "🚀 STARTE FINALEN DEBIAN CVE-UPDATE-PROZESS (Gefiltert, OHNE CVSS)"
@@ -41,7 +61,7 @@ if [ ! -f "$TEMP_JSON_FILE" ]; then
                 cat "$RAW_FILE" | jq > "$TEMP_JSON_FILE"
                 break
             else
-                echo "⚠️ Datei zu klein. Versuche es in 10s erneut..."
+                echo "⚠ Datei zu klein. Versuche es in 10s erneut..."
             fi
         else
             echo "❌ Download fehlgeschlagen. Warte 10s..."
@@ -63,7 +83,7 @@ ALTER TABLE debian_cve ADD COLUMN IF NOT EXISTS priority_color VARCHAR(10);
 ALTER TABLE debian_cve DROP CONSTRAINT IF EXISTS debian_cve_pkey;
 ALTER TABLE debian_cve ADD PRIMARY KEY (cve_id, package_name, distro_name);
 "
-if psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -c "$SCHEMA_SQL" > /dev/null 2>&1; then
+if run_psql "$SCHEMA_SQL" > /dev/null 2>&1; then
     echo "✅ Schema erfolgreich aktualisiert."
 else
     echo "❌ FEHLER: Schema-Anpassung fehlgeschlagen."
@@ -156,9 +176,9 @@ done < "$FLAT_FILE"
 
 echo "COMMIT;" >> "$TEMP_SQL_FILE"
 
-echo "⚙️ Lade $RECORD_COUNT Datensätze in die Datenbank..."
+echo "⚙ Lade $RECORD_COUNT Datensätze in die Datenbank..."
 
-if psql -h "$PG_HOST" -U "$PG_USER" -d "$PG_DB" -f "$TEMP_SQL_FILE" > /dev/null 2>&1; then
+if run_psql_file "$TEMP_SQL_FILE" > /dev/null 2>&1; then
     echo "✅ Erfolgreich: Import abgeschlossen."
 else
     echo "❌ FATALER FEHLER: Datenbank-Import fehlgeschlagen."
