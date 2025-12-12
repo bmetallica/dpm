@@ -105,13 +105,47 @@
     max-width: 1500px;
     max-height: 400px;
     overflow-y: auto;
+    position: relative;
 }
 
 #closePopup {
-    float: right;
+    position: fixed;
+    top: 10px;
+    right: 20px;
     cursor: pointer;
-    font-size: 20px;
+    font-size: 28px;
     color: #ccc;
+    z-index: 10000;
+}
+
+#closeSelectPopup {
+    position: fixed;
+    top: 10px;
+    right: 20px;
+    cursor: pointer;
+    font-size: 28px;
+    color: #ccc;
+    z-index: 10000;
+}
+
+#closeChangePasswordPopupBtn {
+    position: fixed;
+    top: 10px;
+    right: 20px;
+    cursor: pointer;
+    font-size: 28px;
+    color: #ccc;
+    z-index: 10000;
+}
+
+#closeUserManagementPopupBtn {
+    position: fixed;
+    top: 10px;
+    right: 20px;
+    cursor: pointer;
+    font-size: 28px;
+    color: #ccc;
+    z-index: 10000;
 }
 
 pre {
