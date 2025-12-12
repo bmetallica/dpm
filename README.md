@@ -74,8 +74,16 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
 
 
 ---
+## 📦 Schnellinstallation (als root)
+
+```
+curl -sS https://github.com/bmetallica/dpm/blob/main/install.sh | sudo bash
+```
+---
+
 
 ## 📦 Installation
+
 
 ### 1. Code herunterladen
 
@@ -87,7 +95,7 @@ git clone https://github.com/bmetallica/dpm.git
 ### 2. `sshpass` `curl` und `jq` installieren
 
 ```bash
-apt install sshpass curl jq expect
+apt install sshpass curl jq expect build-essential python3
 ```
 
 ### 3. SSH-Schlüssel erstellen (als root)
