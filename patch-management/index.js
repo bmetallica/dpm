@@ -1063,6 +1063,29 @@ app.post('/api/action', async (req, res) => {
     }
 });
 
+// Manuelles Datensammeln für einen spezifischen Server
+app.post('/api/collectData', async (req, res) => {
+    const { ip, id } = req.body;
+
+    if (!ip) {
+        return res.status(400).json({ error: 'IP-Adresse erforderlich.' });
+    }
+
+    try {
+        console.log(`[COLLECT] Starte manuelles Datensammeln für ${ip}...`);
+        
+        const data = await collectDataViaSSH(ip);
+        const sanitizedData = typeof sanitizeData === 'function' ? sanitizeData(data) : data;
+        await insertOrUpdateData(sanitizedData);
+
+        console.log(`[COLLECT] Datensammeln erfolgreich für ${ip}`);
+        res.json({ success: true, message: `Daten erfolgreich gesammelt von ${ip}` });
+    } catch (error) {
+        console.error(`[COLLECT] Fehler beim Datensammeln für ${ip}:`, error.message);
+        res.status(500).json({ error: `Fehler beim Datensammeln: ${error.message.substring(0, 100)}` });
+    }
+});
+
 // --- INIT: SSH-Konfiguration lesen und Scheduler starten ---
 fs.readFile(filePath, 'utf8', (err, data) => {
     initializeAdminUser();
