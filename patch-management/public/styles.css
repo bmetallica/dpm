@@ -148,6 +148,16 @@
     z-index: 10000;
 }
 
+#closeSchedulePopupBtn {
+    position: fixed;
+    top: 10px;
+    right: 20px;
+    cursor: pointer;
+    font-size: 28px;
+    color: #ccc;
+    z-index: 10000;
+}
+
 pre {
     white-space: pre-wrap;
     word-wrap: break-word;
