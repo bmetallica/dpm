@@ -30,10 +30,11 @@
 
 
     <div class="container">
-        <button class="action-button" onclick="openAddServerPopup()">➕ Server hinzufügen</button>&ensp;&ensp;&ensp;
-        <button style="float: right;" onclick="copyBootstrapCommand()" id="copyBootstrapButton" class="action-button" disabled>
-        Bootstrap kopieren 📎
-    </button>
+        <button class="action-button" onclick="openAddServerPopup()">➕ Server hinzufügen</button>
+        <div style="display: inline-block; position: absolute; top: 90px; right: 5px; ">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Bootstrap Befehl:</label>
+            <textarea id="bootstrapCommandField" readonly style="padding: 10px; width:500px;background-color: #d3d3d3; color: #000; border: 1px solid #999; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; resize: none; overflow: hidden; white-space: nowrap;">Wird geladen...</textarea>
+        </div>
 
         <table id="zustandTable">
             <thead>
@@ -1084,51 +1085,31 @@ document.addEventListener('DOMContentLoaded', () => {
 let globalCurlCommand = ''; // Speichert den abgerufenen Curl-Befehl
 
 /**
- * Ruft den Curl-Befehl vom Server ab und speichert ihn global.
- * Aktiviert anschließend den Kopier-Button.
+ * Ruft den Curl-Befehl vom Server ab und zeigt ihn in einem Textfeld an.
  */
 async function loadBootstrapCommand() {
-    const copyButton = document.getElementById('copyBootstrapButton');
+    const bootstrapField = document.getElementById('bootstrapCommandField');
 
     try {
         const response = await fetch('/api/config');
         const data = await response.json();
 
-        // Den Befehl global speichern
-        globalCurlCommand = data.curlCommand;
-
-        // Kopierfunktion aktivieren
-        copyButton.disabled = false;
-        copyButton.innerText = 'Bootstrap kopieren 📎';
-        console.log("Bootstrap-Befehl erfolgreich geladen und Kopier-Button aktiviert.");
+        // Den Befehl im Textfeld anzeigen
+        bootstrapField.value = data.curlCommand;
+        console.log("Bootstrap-Befehl erfolgreich geladen.");
 
     } catch (error) {
         console.error('Fehler beim Laden des Curl-Befehls:', error);
-        copyButton.innerText = 'Fehler!';
-        copyButton.disabled = true;
+        bootstrapField.value = 'Fehler beim Laden des Bootstrap-Befehls';
     }
 }
 
 /**
- * Kopiert den global gespeicherten Befehl in die Zwischenablage.
+ * Wählt den Text im Textfeld aus (optional - für bessere Benutzererfahrung).
  */
-function copyBootstrapCommand() {
-    if (!globalCurlCommand) {
-        alert("Befehl ist noch nicht geladen.");
-        return;
-    }
-
-    // Kopiert den gespeicherten Befehl
-    navigator.clipboard.writeText(globalCurlCommand).then(() => {
-        const copyButton = document.getElementById('copyBootstrapButton');
-        copyButton.innerText = 'Kopiert! ✅';
-        setTimeout(() => {
-            copyButton.innerText = 'Bootstrap kopieren 📎';
-        }, 2000);
-    }).catch(err => {
-        console.error('Fehler beim Kopieren: ', err);
-        alert('Fehler beim Kopieren des Befehls.');
-    });
+function selectBootstrapCommand() {
+    const bootstrapField = document.getElementById('bootstrapCommandField');
+    bootstrapField.select();
 }
 
 // RUFE DIE FUNKTION BEIM START AUF
