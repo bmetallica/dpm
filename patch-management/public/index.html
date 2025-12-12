@@ -546,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!inLogFile) {
                 // NEU: Beim Hinzufügen eines Servers soll dies nur der Initial-Schritt sein
-                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="executeAction('${ip}', 'connectSSH')">Connect SSH</button></td>`;
+                //actionButtons += `<table id=at><tr><td><button class="action-button" onclick="executeAction('${ip}', 'connectSSH')">Connect SSH</button></td>`;
             } else if (inLogFile && updatesAvailable === 0) {
                 actionButtons += '<table id=at><tr></tr></table>';
             } else if (inLogFile && updatesAvailable >= 1) {
