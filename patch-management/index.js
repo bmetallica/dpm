@@ -886,7 +886,7 @@ app.get('/api/zustand', async (req, res) => {
     try {
         const result = await pool.query(`
         SELECT
-        server, sys, pu, ul, root_free, schedule_type, schedule_time, id,
+        server, sys, pu, ul, root_free, zus, komment, schedule_type, schedule_time, id,
         to_char(last_run AT TIME ZONE '${GLOBAL_TIMEZONE}', '${GLOBAL_DATE_FORMAT}') AS last_run_local
         FROM zustand
         ORDER BY
