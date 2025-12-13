@@ -236,6 +236,10 @@ async function collectDataViaSSH(ip) {
     };
 
     try {
+        // Explicit connectivity check: if this fails, throw so callers won't call insertOrUpdateData
+        // (prevents updating last_run when the host is offline)
+        await runSSH(ip, 'echo OK');
+
         await runSSH(ip, 'apt update', true).catch(e => console.log(`[WARN] apt update auf ${ip} fehlgeschlagen: ${e.message}`));
         data.sys = await runSSH(ip, 'lsb_release -ds').catch(() => 'Unbekanntes System');
         data.root_free = await runSSH(ip, "df -h / | tail -n 1 | awk '{print $4}'").catch(() => 'N/A');
@@ -256,6 +260,7 @@ async function collectDataViaSSH(ip) {
         data.server = ip;
         return data;
     } catch (error) {
+        // Re-throw so the caller can decide not to update last_run
         throw error;
     }
 }
