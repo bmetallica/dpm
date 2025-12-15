@@ -156,7 +156,7 @@ app.use(requireLogin);
 
 // --- CRON-SCHEDULER UND SSH HILFSFUNKTIONEN (VOR ENDPUNKTEN) ---
 
-function getCronString(type, time) {
+function getCronString(type, time, day = '0') {
     if (type === 'hourly') {
         return '0 * * * *';
     }
@@ -166,7 +166,7 @@ function getCronString(type, time) {
     }
     if (type === 'weekly' && time) {
         const [hour, minute] = time.split(':');
-        return `${minute} ${hour} * * 0`;
+        return `${minute} ${hour} * * ${day}`;
     }
     return null;
 }
@@ -178,9 +178,15 @@ async function startScheduler() {
         delete cronJobs[ip];
     }
     try {
-        const result = await pool.query('SELECT server, schedule_type, schedule_time FROM zustand WHERE schedule_type IS NOT NULL');
+        // Füge schedule_day Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS schedule_day text DEFAULT '0'
+        `);
+        
+        const result = await pool.query('SELECT server, schedule_type, schedule_time, schedule_day FROM zustand WHERE schedule_type IS NOT NULL');
         result.rows.forEach(row => {
-            const cronString = getCronString(row.schedule_type, row.schedule_time);
+            const cronString = getCronString(row.schedule_type, row.schedule_time, row.schedule_day);
             if (cronString) {
                 console.log(`[CRON] Plane ${row.server} (${row.schedule_type}) mit Cron: ${cronString}`);
                 const job = cron.schedule(cronString, () => {
@@ -859,9 +865,27 @@ app.post('/api/addServer', async (req, res) => {
 });
 
 app.post('/api/schedule', async (req, res) => {
-    const { id, type, time } = req.body;
+    const { id, type, time, day } = req.body;
     try {
-        await pool.query('UPDATE zustand SET schedule_type = $1, schedule_time = $2 WHERE id = $3', [type, time, id]);
+        // Füge schedule_day Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS schedule_day text DEFAULT '0'
+        `);
+        
+        // Speichere schedule_type, schedule_time und optional schedule_day
+        if (type === 'weekly' && day !== undefined) {
+            await pool.query(
+                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = $3 WHERE id = $4',
+                [type, time, day, id]
+            );
+        } else {
+            await pool.query(
+                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = NULL WHERE id = $3',
+                [type, time, id]
+            );
+        }
+        
         restartScheduler();
         res.json({ success: true });
     } catch (error) {
