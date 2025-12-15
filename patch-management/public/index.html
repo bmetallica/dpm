@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Tabelle leeren und neu befüllen
             tableBody.innerHTML = '';
 
-            const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
+            const updateRegex = /^(\S+?)(?:\/\S+)?\s+(\S+).*?\[(?:aktualisierbar von|upgradable from):\s+(\S+)\]/;
 
             updates.forEach((updateLine) => {
                 const match = updateLine.match(updateRegex);
