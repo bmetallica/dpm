@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dpm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: apt
+      POSTGRES_USER: dpm_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dpm-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dpm_user -d apt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dpm:
+    image: bmetallica/dpm:latest
+    container_name: dpm-app
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3030}:3030"
+    environment:
+      # PostgreSQL Konfiguration
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: apt
+      PG_USER: dpm_user
+      PG_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+      
+      # SSH Konfiguration für Ziel-Server
+      SSH_USER: ${SSH_USER:-dpm-service}
+      SSH_PASSWORD: ${SSH_PASSWORD:-changeme456}
+      
+      # Webserver Port
+      WEB_PORT: 3030
+      
+      # Node Environment
+      NODE_ENV: production
+    volumes:
+      # Persistente SSH-Schlüssel
+      - ssh_keys:/root/.ssh
+      # Log-Verzeichnis
+      - ./logs:/app/logs
+    networks:
+      - dpm-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  dpm-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  ssh_keys:
+    driver: local
