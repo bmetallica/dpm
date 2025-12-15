@@ -121,7 +121,17 @@
                     <input type="time" id="dailyTime" value="03:00" disabled> Uhr
                 </label><br>
                 <label>
-                    <input type="radio" name="scheduleType" value="weekly" onchange="toggleScheduleOptions()"> Jeden Sonntag um
+                    <input type="radio" name="scheduleType" value="weekly" onchange="toggleScheduleOptions()"> Jeden
+                    <select id="weeklyDay" disabled style="width: 150px; padding: 5px;">
+                        <option value="0">Sonntag</option>
+                        <option value="1">Montag</option>
+                        <option value="2">Dienstag</option>
+                        <option value="3">Mittwoch</option>
+                        <option value="4">Donnerstag</option>
+                        <option value="5">Freitag</option>
+                        <option value="6">Samstag</option>
+                    </select>
+                    um
                     <input type="time" id="weeklyTime" value="04:00" disabled> Uhr
                 </label>
             </div>
@@ -338,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.getElementById('dailyTime').disabled = !dailyChecked;
             document.getElementById('weeklyTime').disabled = !weeklyChecked;
+            document.getElementById('weeklyDay').disabled = !weeklyChecked;
         }
 
         async function saveSchedule() {
@@ -345,18 +356,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const ip = document.getElementById('scheduleServerIp').value;
             const type = document.querySelector('input[name="scheduleType"]:checked').value;
             let time = '';
+            let day = '';
 
             if (type === 'daily') {
                 time = document.getElementById('dailyTime').value;
             } else if (type === 'weekly') {
                 time = document.getElementById('weeklyTime').value;
+                day = document.getElementById('weeklyDay').value;
             }
 
             try {
                 await fetch('/api/schedule', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, ip, type, time })
+                    body: JSON.stringify({ id, ip, type, time, day })
                 });
 
                 document.getElementById('scheduleStatus').textContent = 'Intervall erfolgreich gespeichert.';
