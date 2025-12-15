@@ -837,8 +837,8 @@ app.post('/api/addServer', async (req, res) => {
     const { ip } = req.body;
     try {
         const query = `
-        INSERT INTO zustand (server, sys, pu, ul, root_free, last_run)
-        VALUES ($1, 'N/A', 0, '', 'N/A', NOW())
+        INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, schedule_type, schedule_time)
+        VALUES ($1, 'N/A', 0, '', 'N/A', NOW(), 'hourly', NULL)
         ON CONFLICT (server) DO NOTHING
         RETURNING id;
         `;
@@ -847,6 +847,10 @@ app.post('/api/addServer', async (req, res) => {
         if (result.rowCount === 0) {
             return res.status(409).json({ error: 'Server existiert bereits.' });
         }
+        
+        // Starte den Scheduler neu, damit der neue Server sofort eingeplant wird
+        restartScheduler();
+        
         res.json({ success: true, id: result.rows[0].id });
     } catch (error) {
         console.error(error);
