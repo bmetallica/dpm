@@ -72,7 +72,21 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
 - Installiertes **Node.js** inkl. `npm`
 - SSH root Zugriff auf die Zielserver
 
+---
+## 🐳 Docker-Installation
 
+🔧 Voraussetzungen 	- docker & compose Plugin
+
+```bash
+mkdir dpm
+cd dpm
+wget https://raw.githubusercontent.com/bmetallica/dpm/refs/heads/main/docker-compose.yml
+wget https://raw.githubusercontent.com/bmetallica/dpm/refs/heads/main/.env
+
+#Passwörter und Port in der .env anpassen
+
+docker compose up -d
+```
 ---
 ## 📦 Schnellinstallation (als root)
 
