@@ -21,7 +21,7 @@ Ein simples, zentrales Patchmanagement-System für Debian-Server.
 
 ⏰ Zeitsteuerung und Automatisierung
 
-  * Flexible Zeitplanung: Frei wählbare Scheduling-Typen für die automatische Datenerfassung (stündlich, täglich, wöchentlich).
+  * Flexible Zeitplanung: Frei wählbare Scheduling-Typen für die automatische Datenerfassung (stündlich [default], täglich, wöchentlich).
 <br>
 
 🛡️ SSH-Management und Sicherheit
