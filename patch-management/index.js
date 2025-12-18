@@ -184,6 +184,12 @@ async function startScheduler() {
             ADD COLUMN IF NOT EXISTS schedule_day text DEFAULT '0'
         `);
         
+        // Füge is_offline Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS is_offline boolean DEFAULT false
+        `);
+        
         const result = await pool.query('SELECT server, schedule_type, schedule_time, schedule_day FROM zustand WHERE schedule_type IS NOT NULL');
         result.rows.forEach(row => {
             const cronString = getCronString(row.schedule_type, row.schedule_time, row.schedule_day);
@@ -276,15 +282,16 @@ async function insertOrUpdateData(data) {
     const current_datetime = new Date().toISOString();
 
     const query = `
-    INSERT INTO zustand (server, sys, pu, ul, root_free, last_run)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, is_offline)
+    VALUES ($1, $2, $3, $4, $5, $6, false)
     ON CONFLICT (server)
     DO UPDATE SET
     sys=$2,
     pu=$3,
     ul=$4,
     root_free=$5,
-    last_run=$6;
+    last_run=$6,
+    is_offline=false;
     `;
     console.log(current_datetime);
     await pool.query(query, [server, sys, pu, ul, root_free, current_datetime]);
@@ -546,6 +553,8 @@ async function runDataCollection(ip) {
         console.log(`[CRON] Datensammlung für ${ip} erfolgreich.`);
     } catch (error) {
         console.error(`[CRON] FEHLER bei Datensammlung für ${ip}: ${error.message}`);
+        // Setze is_offline auf true wenn Datensammeln fehlschlägt
+        await pool.query('UPDATE zustand SET is_offline = true WHERE server = $1', [ip]);
     }
 }
 
@@ -843,8 +852,8 @@ app.post('/api/addServer', async (req, res) => {
     const { ip } = req.body;
     try {
         const query = `
-        INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, schedule_type, schedule_time)
-        VALUES ($1, 'N/A', 0, '', 'N/A', NOW(), 'hourly', NULL)
+        INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, schedule_type, schedule_time, is_offline)
+        VALUES ($1, 'N/A', 0, '', 'N/A', NOW(), 'hourly', NULL, false)
         ON CONFLICT (server) DO NOTHING
         RETURNING id;
         `;
@@ -919,7 +928,7 @@ app.get('/api/zustand', async (req, res) => {
     try {
         const result = await pool.query(`
         SELECT
-        server, sys, pu, ul, root_free, zus, komment, schedule_type, schedule_time, id,
+        server, sys, pu, ul, root_free, zus, komment, schedule_type, schedule_time, id, is_offline,
         to_char(last_run AT TIME ZONE '${GLOBAL_TIMEZONE}', '${GLOBAL_DATE_FORMAT}') AS last_run_local
         FROM zustand
         ORDER BY
@@ -1138,6 +1147,8 @@ app.post('/api/collectData', async (req, res) => {
         res.json({ success: true, message: `Daten erfolgreich gesammelt von ${ip}` });
     } catch (error) {
         console.error(`[COLLECT] Fehler beim Datensammeln für ${ip}:`, error.message);
+        // Setze is_offline auf true wenn Datensammeln fehlschlägt
+        await pool.query('UPDATE zustand SET is_offline = true WHERE server = $1', [ip]);
         res.status(500).json({ error: `Fehler beim Datensammeln: ${error.message.substring(0, 100)}` });
     }
 });
