@@ -421,6 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Tabelle leeren und neu befüllen
             tableBody.innerHTML = '';
 
+            //const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
             const updateRegex = /^(\S+?)(?:\/\S+)?\s+(\S+).*?\[(?:aktualisierbar von|upgradable from):\s+(\S+)\]/;
 
             updates.forEach((updateLine) => {
@@ -436,6 +437,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     newVersion = match[2].split(' ')[0];
                     oldVersion = match[3];
                     updateValue = packageName;
+              //   else {
+                    // Fallback: Versuche, Paketname aus der ersten Spalte zu extrahieren
+              //      const parts = updateLine.split(/\s+/);
+              //      if (parts.length > 0) {
+              //          packageName = parts[0].split('/')[0]; // Entferne Distribution falls vorhanden
+              //          updateValue = packageName;
+              //      }
                 }
 
                 // Prüfen, ob es eine Schwachstelle für dieses Paket gibt
@@ -503,8 +511,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tr = document.createElement('tr');
                 if (parseInt(row.pu) >= 1) tr.classList.add('highlight-row');
 
+                // Berechne den Offline-Button HTML wenn is_offline true ist
+                const offlineButtonHTML = row.is_offline ? `
+                    <span style="display: inline-block; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #707070 0%, #505050 100%); color: white; padding: 4px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #3a3a3a; letter-spacing: 0.5px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0px -1px 0 #000, 0px 1px 0 #000, -1px 0px 0 #000, 1px 0px 0 #000;">
+                        <span style="display: inline-block; width: 7px; height: 7px; background-color: #ff3333; border-radius: 50%; margin-right: 6px; vertical-align: middle; box-shadow: 0 1px 3px rgba(255,51,51,0.4);"></span>offline
+                    </span>
+                ` : '';
+
                 tr.innerHTML = `
                     <td style="position: relative; padding-bottom: 35px; padding-top: 40px;">
+                        ${offlineButtonHTML}
                         <span style="display: inline-block; position: absolute; top: 5px; right: 5px; cursor: pointer;" title="Restore SSH Autoconnect" onclick="restoreSSHKey('${row.server}', ${row.id})">
                             <span style="font-size: 12px;">🔑</span>
                         </span>
@@ -905,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 font-size: 12px;
                 padding: 10px;
                 overflow-y: auto;
-                height: calc(100% - 35px);
+                height: calc(100% + 35px);
                 white-space: pre-wrap;
                 word-wrap: break-word;
                 border-bottom: 1px solid #333;
