@@ -87,6 +87,7 @@ docker compose up -d
 - Im Netzwerk erreichbare **PostgreSQL-Datenbank**
 - Installiertes **Node.js** inkl. `npm`
 - SSH root Zugriff auf die Zielserver
+- Einen extra User auf dem Zielsystem mit sudo Rechten (wird vom bootstrap erzeugt)
 
 ---
 ## 📦 Schnellinstallation (als root)
