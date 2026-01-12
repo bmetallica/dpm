@@ -31,6 +31,7 @@
 
     <div class="container">
         <button class="action-button" onclick="openAddServerPopup()">➕ Server hinzufügen</button>
+        <button class="action-button" onclick="updateSelectedServers()" style="margin-left: 10px;">🔄 Ausgewählte Server updaten</button>
         <div style="display: inline-block; position: absolute; top: 90px; right: 5px; ">
             <label style="display: block; margin-bottom: 5px; font-weight: bold;">Bootstrap Befehl:</label>
             <textarea id="bootstrapCommandField" readonly style="padding: 10px; width:500px;background-color: #d3d3d3; color: #000; border: 1px solid #999; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; resize: none; overflow: hidden; white-space: nowrap;">Wird geladen...</textarea>
@@ -39,6 +40,7 @@
         <table id="zustandTable">
             <thead>
                 <tr>
+                    <th width="10px"></th>
                     <th>Server</th>
                     <th>Debian Version</th>
                     <th>Zuständig</th>
@@ -518,7 +520,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>
                 ` : '';
 
+                // Checkbox nur anzeigen wenn Server Updates hat
+                const hasUpdates = parseInt(row.pu) >= 1;
+                const checkboxHTML = hasUpdates ? `<input type="checkbox" class="server-checkbox" data-server-ip="${row.server}" data-server-id="${row.id}">` : '';
+
                 tr.innerHTML = `
+                    <td style="text-align: center;">${checkboxHTML}</td>
                     <td style="position: relative; padding-bottom: 35px; padding-top: 40px;">
                         ${offlineButtonHTML}
                         <span style="display: inline-block; position: absolute; top: 5px; right: 5px; cursor: pointer;" title="Restore SSH Autoconnect" onclick="restoreSSHKey('${row.server}', ${row.id})">
@@ -691,6 +698,81 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[SSH-RESTORE] Fehler:', error);
                 statusEl.innerHTML = `<div style="color: #ff6b6b;">✗ Fehler: ${error.message}</div>`;
                 setTimeout(() => statusEl.remove(), 3000);
+            }
+        }
+
+        // Funktion zum Updaten mehrerer ausgewählter Server nacheinander
+        async function updateSelectedServers() {
+            const checkboxes = document.querySelectorAll('.server-checkbox:checked');
+            
+            if (checkboxes.length === 0) {
+                alert('Bitte wählen Sie mindestens einen Server aus.');
+                return;
+            }
+
+            // Liste der ausgewählten Server sammeln
+            const serversToUpdate = Array.from(checkboxes).map(cb => ({
+                ip: cb.dataset.serverIp,
+                id: cb.dataset.serverId
+            }));
+
+            // Popup öffnen
+            openPopup();
+
+            // WebSocket-Verbindung herstellen
+            ws = new WebSocket(`ws://${location.host}`);
+
+            ws.onopen = () => {
+                document.getElementById('updateLog').textContent = `WebSocket-Verbindung hergestellt.\nStarte Update für ${serversToUpdate.length} Server...\n\n`;
+                scrollToBottom();
+            };
+
+            ws.onmessage = (event) => {
+                const log = document.getElementById('updateLog');
+                log.textContent += event.data;
+                scrollToBottom();
+            };
+
+            ws.onclose = () => {
+                const log = document.getElementById('updateLog');
+                log.textContent += '\nAlle Updates abgeschlossen. Verbindung geschlossen.';
+                scrollToBottom();
+                setTimeout(() => {
+                    closePopup();
+                    loadZustand();
+                }, 2000);
+            };
+
+            // Server nacheinander updaten
+            for (let i = 0; i < serversToUpdate.length; i++) {
+                const server = serversToUpdate[i];
+                
+                try {
+                    // Nachricht über aktuellen Server senden (über WebSocket)
+                    if (ws.readyState === WebSocket.OPEN) {
+                        const log = document.getElementById('updateLog');
+                        log.textContent += `\n========================================\n`;
+                        log.textContent += `Server ${i + 1}/${serversToUpdate.length}: ${server.ip}\n`;
+                        log.textContent += `========================================\n\n`;
+                        scrollToBottom();
+                    }
+
+                    // Update-Anfrage senden und auf Abschluss warten
+                    await fetch('/api/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: server.ip, action: 'updateServer' })
+                    });
+
+                    // Kurze Pause zwischen den Updates (1 Sekunde), damit WebSocket-Nachrichten ankommen
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                } catch (error) {
+                    console.error(`Fehler beim Update von ${server.ip}:`, error);
+                    const log = document.getElementById('updateLog');
+                    log.textContent += `\nFEHLER beim Update von ${server.ip}: ${error.message}\n`;
+                    scrollToBottom();
+                }
             }
         }
 
