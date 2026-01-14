@@ -27,11 +27,11 @@ const GLOBAL_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'; // Standardformat
 
 // PostgreSQL-Verbindung einrichten
 const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'apt',
-    password: 'postgres',
-    port: 5432
+  user: 'apt4auto',
+  host: 'localhost',
+  database: 'apt',
+  password: 'apt4auto',
+  port: 5432,
 });
 
 
@@ -645,6 +645,37 @@ function execUpdateWithProgress(ip) {
     });
 }
 
+function unlockAptOnRemoteServer(ip) {
+    console.log(`[UNLOCK-APT] Starte apt-Entsperrung auf ${ip}...`);
+    
+    // Ausführung der beiden Befehle nacheinander
+    const killAptCommand = `ssh ${sshuser}@${ip} 'sudo pkill apt'`;
+    const configureCommand = `ssh ${sshuser}@${ip} 'sudo dpkg --configure -a'`;
+
+    // 1. Schritt: pkill apt
+    exec(killAptCommand, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[UNLOCK-APT] Fehler bei pkill apt auf ${ip}:`, error.message);
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[UNLOCK-APT] Fehler bei pkill apt: ${stderr || error.message}\n`); });
+        } else {
+            console.log(`[UNLOCK-APT] pkill apt erfolgreich auf ${ip}`);
+            wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[UNLOCK-APT] ✓ sudo pkill apt erfolgreich ausgeführt\n`); });
+            
+            // 2. Schritt: dpkg --configure -a
+            exec(configureCommand, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`[UNLOCK-APT] Fehler bei dpkg --configure -a auf ${ip}:`, error.message);
+                    wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[UNLOCK-APT] Fehler bei dpkg --configure -a: ${stderr || error.message}\n`); });
+                } else {
+                    console.log(`[UNLOCK-APT] dpkg --configure -a erfolgreich auf ${ip}`);
+                    wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[UNLOCK-APT] ✓ sudo dpkg --configure -a erfolgreich ausgeführt\n`); });
+                }
+                wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(`[UNLOCK-APT] Prozess abgeschlossen.\n`); });
+            });
+        }
+    });
+}
+
 
 // ----------------------------------------------------------------------
 // --- ENDPUNKTE (ROUTING) ---
@@ -1122,6 +1153,9 @@ app.post('/api/action', async (req, res) => {
             return res.status(400).json({ error: 'Keine Pakete für das Update ausgewählt.' });
         }
         execSelectedUpdateWithProgress(ip, packages);
+        res.json({ success: true });
+    } else if (action === 'unlockApt') {
+        unlockAptOnRemoteServer(ip);
         res.json({ success: true });
     } else {
         res.status(400).json({ error: 'Ungültige Aktion.' });
