@@ -537,6 +537,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="display: inline-block; position: absolute; bottom: 5px; left: 5px; cursor: pointer;" title="configure sheduling" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}' })">
                             <span style="font-size: 18px;">⚙️</span>
                         </span>
+                        <span style="display: inline-block; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); cursor: pointer;" title="entsperre apt" onclick="unlockApt('${row.server}')">
+                            <span style="font-size: 18px;">🔧</span>
+                        </span>
                         <span style="display: inline-block; position: absolute; bottom: 5px; right: 5px; cursor: pointer;" title="open remote Shell" onclick="openRemoteConsole('${row.server}')">
                             <span style="font-size: 18px;">🖥️</span>
                         </span><center><b>
@@ -698,6 +701,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[SSH-RESTORE] Fehler:', error);
                 statusEl.innerHTML = `<div style="color: #ff6b6b;">✗ Fehler: ${error.message}</div>`;
                 setTimeout(() => statusEl.remove(), 3000);
+            }
+        }
+
+        // Funktion zum Entsperren von APT auf dem Remote-Server
+        async function unlockApt(ip) {
+            const confirmation = confirm(`Soll APT auf Server ${ip} entsperrt werden?\n\nDies führt aus:\n• sudo pkill apt\n• sudo dpkg --configure -a`);
+            if (!confirmation) return;
+
+            openPopup();
+
+            // WebSocket-Verbindung herstellen
+            ws = new WebSocket(`ws://${location.host}`);
+
+            ws.onopen = () => {
+                document.getElementById('updateLog').textContent = `WebSocket-Verbindung hergestellt.\nStarte APT-Entsperrung auf ${ip}...\n\n`;
+                scrollToBottom();
+            };
+
+            ws.onmessage = (event) => {
+                const log = document.getElementById('updateLog');
+                log.textContent += event.data;
+                scrollToBottom();
+            };
+
+            ws.onclose = () => {
+                const log = document.getElementById('updateLog');
+                log.textContent += '\nAPT-Entsperrung abgeschlossen. Verbindung geschlossen.';
+                scrollToBottom();
+                setTimeout(() => {
+                    closePopup();
+                    loadZustand();
+                }, 2000);
+            };
+
+            try {
+                await fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, action: 'unlockApt' })
+                });
+            } catch (error) {
+                console.error("[UNLOCK-APT] Fehler:", error);
+                document.getElementById('updateLog').textContent += `\nFEHLER: ${error.message}`;
+                scrollToBottom();
             }
         }
 
