@@ -157,6 +157,9 @@ app.use(requireLogin);
 // --- CRON-SCHEDULER UND SSH HILFSFUNKTIONEN (VOR ENDPUNKTEN) ---
 
 function getCronString(type, time, day = '0') {
+    if (type === 'disabled') {
+        return null; // Keine Cron-Ausführung für deaktivierte Server
+    }
     if (type === 'hourly') {
         return '0 * * * *';
     }
@@ -188,6 +191,30 @@ async function startScheduler() {
         await pool.query(`
             ALTER TABLE zustand
             ADD COLUMN IF NOT EXISTS is_offline boolean DEFAULT false
+        `);
+        
+        // Füge enable_zusatz_script Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS enable_zusatz_script boolean DEFAULT false
+        `);
+        
+        // Füge server_name Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS server_name text DEFAULT ''
+        `);
+        
+        // Füge server_purpose Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS server_purpose text DEFAULT ''
+        `);
+        
+        // Füge updates_locked Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS updates_locked boolean DEFAULT false
         `);
         
         const result = await pool.query('SELECT server, schedule_type, schedule_time, schedule_day FROM zustand WHERE schedule_type IS NOT NULL');
@@ -551,11 +578,54 @@ async function runDataCollection(ip) {
         const sanitizedData = sanitizeData(data);
         await insertOrUpdateData(sanitizedData);
         console.log(`[CRON] Datensammlung für ${ip} erfolgreich.`);
+        
+        // Nach erfolgreicher Datensammlung: Prüfe ob Zusatz-Skript ausgeführt werden soll
+        try {
+            const serverResult = await pool.query('SELECT enable_zusatz_script FROM zustand WHERE server = $1', [ip]);
+            if (serverResult.rows.length > 0 && serverResult.rows[0].enable_zusatz_script) {
+                // Führe das Zusatz-Skript im Hintergrund aus (nicht warten)
+                executeZusatzScript(ip);
+            }
+        } catch (dbError) {
+            console.error(`[CRON] Fehler beim Prüfen von enable_zusatz_script für ${ip}:`, dbError.message);
+        }
+        
     } catch (error) {
         console.error(`[CRON] FEHLER bei Datensammlung für ${ip}: ${error.message}`);
         // Setze is_offline auf true wenn Datensammeln fehlschlägt
         await pool.query('UPDATE zustand SET is_offline = true WHERE server = $1', [ip]);
     }
+}
+
+function executeZusatzScript(ip) {
+    const scriptPath = '/opt/dpm/patch-management/skripts/zusatz.sh';
+    const command = `${scriptPath} --ip ${ip}`;
+    
+    console.log(`[ZUSATZ] Starte Zusatz-Skript für ${ip}: ${command}`);
+    
+    // Führe das Skript im Hintergrund aus (nicht warten, nicht blockieren)
+    const backgroundProcess = exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[ZUSATZ] Fehler beim Ausführen von zusatz.sh für ${ip}:`, error.message);
+            if (stderr) console.error(`[ZUSATZ] stderr: ${stderr}`);
+        } else {
+            console.log(`[ZUSATZ] Zusatz-Skript erfolgreich ausgeführt für ${ip}`);
+            if (stdout) console.log(`[ZUSATZ] stdout: ${stdout}`);
+        }
+    });
+    
+    // Optional: Timeout setzen (z.B. 5 Minuten)
+    const timeout = setTimeout(() => {
+        if (!backgroundProcess.killed) {
+            console.warn(`[ZUSATZ] Zusatz-Skript für ${ip} wird nach 5 Minuten abgebrochen.`);
+            backgroundProcess.kill();
+        }
+    }, 5 * 60 * 1000);
+    
+    // Wenn Prozess endet, Timeout löschen
+    backgroundProcess.on('exit', () => {
+        clearTimeout(timeout);
+    });
 }
 
 function checkIpInLogFile(ip) {
@@ -905,24 +975,24 @@ app.post('/api/addServer', async (req, res) => {
 });
 
 app.post('/api/schedule', async (req, res) => {
-    const { id, type, time, day } = req.body;
+    const { id, type, time, day, enableZusatzScript } = req.body;
     try {
-        // Füge schedule_day Spalte hinzu, falls noch nicht vorhanden
-        await pool.query(`
-            ALTER TABLE zustand
-            ADD COLUMN IF NOT EXISTS schedule_day text DEFAULT '0'
-        `);
-        
-        // Speichere schedule_type, schedule_time und optional schedule_day
+        // Speichere schedule_type, schedule_time, optional schedule_day und enable_zusatz_script
         if (type === 'weekly' && day !== undefined) {
             await pool.query(
-                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = $3 WHERE id = $4',
-                [type, time, day, id]
+                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = $3, enable_zusatz_script = $4 WHERE id = $5',
+                [type, time, day, enableZusatzScript || false, id]
+            );
+        } else if (type === 'disabled') {
+            // Bei deaktiviertem Scheduling: Setze alles auf NULL
+            await pool.query(
+                'UPDATE zustand SET schedule_type = $1, schedule_time = NULL, schedule_day = NULL, enable_zusatz_script = $2 WHERE id = $3',
+                [type, enableZusatzScript || false, id]
             );
         } else {
             await pool.query(
-                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = NULL WHERE id = $3',
-                [type, time, id]
+                'UPDATE zustand SET schedule_type = $1, schedule_time = $2, schedule_day = NULL, enable_zusatz_script = $3 WHERE id = $4',
+                [type, time, enableZusatzScript || false, id]
             );
         }
         
@@ -951,6 +1021,34 @@ app.delete('/api/deleteServer', async (req, res) => {
     }
 });
 
+// Neuer Endpunkt zum Umschalten des Update-Lock-Status
+app.post('/api/toggleUpdateLock', async (req, res) => {
+    const { id, locked } = req.body;
+    
+    if (!id || locked === undefined) {
+        return res.status(400).json({ success: false, message: 'Ungültige Parameter.' });
+    }
+
+    try {
+        // Füge updates_locked Spalte hinzu, falls noch nicht vorhanden
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS updates_locked boolean DEFAULT false
+        `);
+
+        // Aktualisiere den Lock-Status für den Server
+        await pool.query(
+            'UPDATE zustand SET updates_locked = $1 WHERE id = $2',
+            [locked, id]
+        );
+
+        res.json({ success: true, message: `Server ${locked ? 'gesperrt' : 'entsperrt'}.` });
+    } catch (error) {
+        console.error('Fehler beim Umschalten des Lock-Status:', error);
+        res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren des Lock-Status.' });
+    }
+});
+
 // index.js (Ersetzt den Endpunkt app.get('/api/zustand', ...))
 
 // index.js (Ersetzt den Endpunkt app.get('/api/zustand', ...))
@@ -959,7 +1057,7 @@ app.get('/api/zustand', async (req, res) => {
     try {
         const result = await pool.query(`
         SELECT
-        server, sys, pu, ul, root_free, zus, komment, schedule_type, schedule_time, id, is_offline,
+        server, sys, pu, ul, root_free, zus, komment, schedule_type, schedule_time, id, is_offline, enable_zusatz_script, server_name, server_purpose, updates_locked,
         to_char(last_run AT TIME ZONE '${GLOBAL_TIMEZONE}', '${GLOBAL_DATE_FORMAT}') AS last_run_local
         FROM zustand
         ORDER BY
@@ -1178,6 +1276,18 @@ app.post('/api/collectData', async (req, res) => {
         await insertOrUpdateData(sanitizedData);
 
         console.log(`[COLLECT] Datensammeln erfolgreich für ${ip}`);
+        
+        // Nach erfolgreicher manueller Datensammlung: Prüfe ob Zusatz-Skript ausgeführt werden soll
+        try {
+            const serverResult = await pool.query('SELECT enable_zusatz_script FROM zustand WHERE server = $1', [ip]);
+            if (serverResult.rows.length > 0 && serverResult.rows[0].enable_zusatz_script) {
+                // Führe das Zusatz-Skript im Hintergrund aus (nicht warten)
+                executeZusatzScript(ip);
+            }
+        } catch (dbError) {
+            console.error(`[COLLECT] Fehler beim Prüfen von enable_zusatz_script für ${ip}:`, dbError.message);
+        }
+        
         res.json({ success: true, message: `Daten erfolgreich gesammelt von ${ip}` });
     } catch (error) {
         console.error(`[COLLECT] Fehler beim Datensammeln für ${ip}:`, error.message);
