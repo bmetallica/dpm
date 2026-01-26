@@ -40,6 +40,11 @@
             background-color: transparent; /* Set table background to transparent */
             overflow: hidden;
         }
+        
+        td table {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
 
         th,
         td {
@@ -48,6 +53,14 @@
             text-align: left;
             transition: background-color 0.3s ease;
         }
+        
+        th {
+            padding: 16px;
+        }
+        
+        td:has(textarea) {
+            padding: 0px;
+        }
 
         th {
             background-color: #4CAF50;
@@ -55,24 +68,29 @@
         }
 
         textarea {
-            width: 90%;
+            width: 100%;
             height: 2em;
             resize: vertical;
             background-color: #333;
             color: #ffffff;
-            border: 1px solid #666;
-            padding: 12px;
-            border-radius: 6px;
+            border: none;
+            padding: 8px;
+            border-radius: 0px;
+            box-sizing: border-box;
+            margin: 1px 0;
+            font-family: inherit;
         }
 
         .action-button {
             background-color: #3498db;
             color: #ffffff;
-            padding: 12px 20px;
-            border: none;
-            border-radius: none;
+            padding: 6px 12px;
+            border: 0px solid #000000;
+            border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            font-size: 13px;
+            font-weight: 500;
         }
 
         .action-button:hover {
@@ -87,6 +105,101 @@
             background-color: #2ecc71;
             color: #ffffff;
         }
+
+        /* Styles für gesperrte Server-Zeile */
+        .locked-row {
+            background-color: rgba(211, 211, 211, 0.25) !important;
+            color: rgba(51, 51, 51, 0.25) !important;
+        }
+
+        .locked-row input[type="checkbox"] {
+            display: none;
+        }
+
+        .locked-row td {
+            background-color: rgba(211, 211, 211, 0.25) !important;
+            color: rgba(51, 51, 51, 0.8) !important;
+        }
+
+        .locked-row textarea {
+            background-color: rgba(192, 192, 192, 0.25);
+            color: rgba(51, 51, 51, 0.8);
+        }
+
+        /* Lock-Icon Button soll bei gesperrten Zeilen normal sichtbar bleiben */
+        .locked-row .lock-icon-button {
+            opacity: 1 !important;
+            color: #333 !important;
+        }
+
+        /* Button Styles für Lock/Unlock */
+        .button-lock {
+            background-color: #e74c3c !important;
+        }
+
+        .button-lock:hover {
+            background-color: #c0392b !important;
+        }
+
+        .button-unlock {
+            background-color: #27ae60 !important;
+        }
+
+        .button-unlock:hover {
+            background-color: #229954 !important;
+        }
+
+        /* Lock-Icon Button - klein in der Ecke */
+        .lock-icon-button {
+            position: absolute;
+            bottom: 1px;
+            right: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px;
+            min-width: 0;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            opacity: 1;
+        }
+
+        .lock-icon-button:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+
+        /* Lock-Button soll auch bei gesperrten Zeilen normal sichtbar sein */
+        .locked-row .lock-icon-button {
+            opacity: 1;
+        }
+
+        .locked-row .lock-icon-button:hover {
+            opacity: 1;
+        }
+
+        .lock-icon-button::before {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            background: #333;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: normal;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            margin-bottom: 8px;
+            transition: opacity 0.3s ease;
+        }
+
+        .lock-icon-button:hover::before {
+            opacity: 1;
+        }
+
 /* Popup-Fenster-Stile */
 .popup {
     position: fixed;
