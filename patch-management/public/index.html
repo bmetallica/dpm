@@ -34,7 +34,7 @@
         <button class="action-button" onclick="updateSelectedServers()" style="margin-left: 10px;">🔄 Ausgewählte Server updaten</button>
         <div style="display: inline-block; position: absolute; top: 90px; right: 5px; ">
             <label style="display: block; margin-bottom: 5px; font-weight: bold;">Bootstrap Befehl:</label>
-            <textarea id="bootstrapCommandField" readonly style="padding: 10px; width:500px;background-color: #d3d3d3; color: #000; border: 1px solid #999; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; resize: none; overflow: hidden; white-space: nowrap;">Wird geladen...</textarea>
+            <textarea id="bootstrapCommandField" readonly style="padding: 10px; width:650px;background-color: #d3d3d3; color: #000; border: 1px solid #999; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; resize: none; overflow: hidden; white-space: nowrap;">Wird geladen...</textarea>
         </div>
 
         <table id="zustandTable">
@@ -42,10 +42,12 @@
                 <tr>
                     <th width="10px"></th>
                     <th>Server</th>
+                    <th>Name (DNS)</th>
                     <th>Debian Version</th>
+                    <th>Zweck</th>
                     <th>Zuständig</th>
-                    <th>Possible Updates</th>
-                    <th>Root Free</th>
+                    <th>UP</th>
+                    <th>RootFree</th>
                     <th>Last Run</th>
                     <th>Aktion</th>
                     <th width=10px>l&ouml;schen</th>
@@ -116,6 +118,9 @@
 
             <div class="schedule-options">
                 <label>
+                    <input type="radio" name="scheduleType" value="disabled" onchange="toggleScheduleOptions()"> Deaktiviert
+                </label><br>
+                <label>
                     <input type="radio" name="scheduleType" value="hourly" onchange="toggleScheduleOptions()"> Stündlich
                 </label><br>
                 <label>
@@ -135,6 +140,12 @@
                     </select>
                     um
                     <input type="time" id="weeklyTime" value="04:00" disabled> Uhr
+                </label>
+            </div>
+
+            <div style="margin: 20px 0; padding: 15px 0; border-top: 1px solid #555;">
+                <label>
+                    <input type="checkbox" id="enableZusatzScript"> Zusatz Skript mit ausführen
                 </label>
             </div>
 
@@ -329,12 +340,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Setze die Radiobuttons basierend auf dem aktuellen Schedule
             let type = schedule.type || 'hourly';
             let time = schedule.time || '03:00';
+            let enableZusatzScript = schedule.enableZusatzScript || false;
 
             document.querySelector(`input[name="scheduleType"][value="${type}"]`).checked = true;
 
             // Setze die Uhrzeiten
             document.getElementById('dailyTime').value = time;
             document.getElementById('weeklyTime').value = time;
+
+            // Setze die Zusatz Script Checkbox
+            document.getElementById('enableZusatzScript').checked = enableZusatzScript;
 
             toggleScheduleOptions(); // Aktiviert/Deaktiviert die Zeitfelder
             document.getElementById('schedulePopup').style.display = 'block';
@@ -357,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = document.getElementById('scheduleServerId').value;
             const ip = document.getElementById('scheduleServerIp').value;
             const type = document.querySelector('input[name="scheduleType"]:checked').value;
+            const enableZusatzScript = document.getElementById('enableZusatzScript').checked;
             let time = '';
             let day = '';
 
@@ -365,13 +381,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (type === 'weekly') {
                 time = document.getElementById('weeklyTime').value;
                 day = document.getElementById('weeklyDay').value;
+            } else if (type === 'disabled') {
+                time = null;
+                day = null;
             }
 
             try {
                 await fetch('/api/schedule', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, ip, type, time, day })
+                    body: JSON.stringify({ id, ip, type, time, day, enableZusatzScript })
                 });
 
                 document.getElementById('scheduleStatus').textContent = 'Intervall erfolgreich gespeichert.';
@@ -512,6 +531,11 @@ document.addEventListener('DOMContentLoaded', () => {
             zustandList.forEach(row => {
                 const tr = document.createElement('tr');
                 if (parseInt(row.pu) >= 1) tr.classList.add('highlight-row');
+                
+                // Füge locked-row Klasse hinzu, wenn Server gesperrt ist
+                if (row.updates_locked) {
+                    tr.classList.add('locked-row');
+                }
 
                 // Berechne den Offline-Button HTML wenn is_offline true ist
                 const offlineButtonHTML = row.is_offline ? `
@@ -524,6 +548,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hasUpdates = parseInt(row.pu) >= 1;
                 const checkboxHTML = hasUpdates ? `<input type="checkbox" class="server-checkbox" data-server-ip="${row.server}" data-server-id="${row.id}">` : '';
 
+                // Formatiere Debian Version: z.B. "Debian GNU/Linux 12 (bookworm)" -> "Debian12 (bookworm)"
+                const debianVersion = row.sys.replace(/Debian GNU\/Linux (\d+)/, 'Debian$1');
+
                 tr.innerHTML = `
                     <td style="text-align: center;">${checkboxHTML}</td>
                     <td style="position: relative; padding-bottom: 35px; padding-top: 40px;">
@@ -534,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="display: inline-block; position: absolute; top: 5px; left: 5px; cursor: pointer;" title="Daten aktualisieren" onclick="collectDataManually('${row.server}', ${row.id})">
                             <span style="font-size: 18px; color: #ff9800;"><b>⟳</b></span>
                         </span>
-                        <span style="display: inline-block; position: absolute; bottom: 5px; left: 5px; cursor: pointer;" title="configure sheduling" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}' })">
+                        <span style="display: inline-block; position: absolute; bottom: 5px; left: 5px; cursor: pointer;" title="configure sheduling" onclick="openSchedulePopup(${row.id}, '${row.server}', { type: '${row.schedule_type || ''}', time: '${row.schedule_time || ''}', enableZusatzScript: ${row.enable_zusatz_script || false} })">
                             <span style="font-size: 18px;">⚙️</span>
                         </span>
                         <span style="display: inline-block; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); cursor: pointer;" title="entsperre apt" onclick="unlockApt('${row.server}')">
@@ -543,18 +570,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="display: inline-block; position: absolute; bottom: 5px; right: 5px; cursor: pointer;" title="open remote Shell" onclick="openRemoteConsole('${row.server}')">
                             <span style="font-size: 18px;">🖥️</span>
                         </span><center><b>
-                        ${row.server}</b></center
+                        ${row.server}</b></center>
                     </td>
-                    <td>${row.sys}</td>
                     <td>
-                        <textarea onchange="saveText(${row.id}, 'zus', this.value)">${row.zus}</textarea>
+                        <center><textarea onchange="saveText(${row.id}, 'server_name', this.value)" style="width: 96%; height: 100%;">${row.server_name || ''}</textarea>
+                    </td>
+                    <td>${debianVersion}</td>
+                    <td>
+                        <center><textarea onchange="saveText(${row.id}, 'server_purpose', this.value)" style="width: 96%; height: 100%;">${row.server_purpose || ''}</textarea>
+                    </td>
+                    <td>
+                        <center><textarea onchange="saveText(${row.id}, 'zus', this.value)" style="width: 96%; height: 100%;">${row.zus}</textarea>
                     </td>
                     <td>${row.pu}</td>
                     <td>${row.root_free}</td>
                     <td>${formatdate(row.last_run)}</td>
-                    <td>${renderAction(row)}</td>
+                    <td style="position: relative;">${renderAction(row)}</td>
                     <td>
-                        <textarea onchange="saveText(${row.id}, 'komment', this.value)">${row.komment}</textarea>
+                        <center><textarea onchange="saveText(${row.id}, 'komment', this.value)" style="width: 96%; height: 100%;">${row.komment}</textarea></center>
                     </td>
                 `;
                 tableBody.appendChild(tr);
@@ -573,7 +606,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Funktion zur Formatierung des last_run in die gewünschte Darstellung
         function formatdate(last_run) {
             if (!last_run) return 'N/A';
-            return last_run.split('.')[0].replace('T', ' ');
+            const parts = last_run.split('.')[0].replace('T', ' ').split(' ');
+            // Trenne Datum und Uhrzeit mit <br> für Zeilenumbruch
+            return parts.length === 2 ? `${parts[0]}<br>${parts[1]}` : last_run.split('.')[0].replace('T', ' ');
         }
 
         // Funktion zur Darstellung der Action-Buttons (Update, SSH, Löschen)
@@ -581,6 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ip = row.server;
             const updatesAvailable = parseInt(row.pu);
             const inLogFile = row.inLogFile;
+            const isLocked = row.updates_locked;
 
             let actionButtons = '';
 
@@ -590,11 +626,20 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (inLogFile && updatesAvailable === 0) {
                 actionButtons += '<table id=at><tr></tr></table>';
             } else if (inLogFile && updatesAvailable >= 1) {
-                actionButtons += `<table id=at><tr><td><button class="action-button" onclick="selupd('${ip}', ${row.id})">Select Updates</button>&ensp;&ensp;&ensp;<button class="action-button" onclick="updateServer('${ip}')">Update FULL Server</button></td></tr></table>`;
+                // Button Sichtbarkeit basierend auf Lock-Status
+                const selectButtonDisplay = isLocked ? 'display: none;' : '';
+                const updateButtonDisplay = isLocked ? 'display: none;' : '';
+                
+                actionButtons += `<table id=at style="border-collapse: collapse;"><tr><td style="padding: 1px;"><button class="action-button" id="select-updates-${row.id}" title="Wähle Updates aus" onclick="selupd('${ip}', ${row.id})" style="min-width: auto; width: 100%; display: block; ${selectButtonDisplay}">🔍 select Updates</button></td></tr><tr><td style="padding: 1px; height: 10px; border: none;"></td></tr><tr><td style="padding: 1px;"><button class="action-button" id="full-update-${row.id}" title="Aktualisiere alle Pakete" onclick="updateServer('${ip}')" style="min-width: auto; width: 100%; display: block; ${updateButtonDisplay}">⬆️ FULL Update</button></td></tr><tr><td style="padding: 1px; height: 10px; border: none;"></td></tr></table>`;
+            }
+            
+            // Lock-Button als Icon in der Ecke - wird für alle Server mit inLogFile angezeigt
+            if (inLogFile) {
+                actionButtons += `<button class="lock-icon-button" id="lock-btn-${row.id}" title="enable/disable updates" onclick="toggleUpdateLock(${row.id}, '${ip}', ${isLocked})">${isLocked ? '🔓' : '🔒'}</button>`;
             }
 
             // Server löschen-Button hinzufügen
-            actionButtons += `<td><button title="Server l&ouml;schen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td>`;
+            actionButtons += `<td><button title="Server löschen" class="del-button delete-button" onclick="deleteServer(${row.id}, '${row.server}')"><img src="/images/del.png" alt="del-img"></button></td>`;
 
             return actionButtons;
         }
@@ -609,6 +654,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ id })
                 });
                 loadZustand(); // Tabelle aktualisieren
+            }
+        }
+
+        // Funktion zum Umschalten des Update-Lock-Status
+        async function toggleUpdateLock(id, ip, isCurrentlyLocked) {
+            try {
+                const response = await fetch('/api/toggleUpdateLock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, locked: !isCurrentlyLocked })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Tabelle neu laden, um den neuen Status anzuzeigen
+                    loadZustand();
+                } else {
+                    alert(`Fehler beim Ändern des Lock-Status: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Fehler beim Toggling des Lock-Status:', error);
+                alert(`Fehler beim Ändern des Lock-Status`);
             }
         }
 
