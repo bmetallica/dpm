@@ -60,30 +60,38 @@
 
     <div id="updatePopup" class="popup" style="display: none;">
         <div class="popup-content">
-            <span id="closePopup" onclick="closePopup()">&times;&nbsp;&nbsp;</span>
+            <span id="closePopup" class="popup-close" onclick="closePopup()" title="Schließen">&times;</span>
             <h2>Updateprozess</h2>
             <pre id="updateLog">Verbinde...</pre>
         </div>
     </div>
 
     <div id="selectUpdatePopup" class="popup" style="display: none;">
-        <div class="popup-content" style="display: flex; flex-direction: column; height: 100%;">
-            <span id="closeSelectPopup" onclick="closeSelectPopup()">&times;&nbsp;&nbsp;</span>
-            
-            <!-- Fixed Header -->
-            <div style="position: sticky; top: 0; background: #333; padding: 0 0 15px 0; z-index: 100; border-bottom: 1px solid #555;">
-                <h2 id="selectUpdateServerTitle" style="margin: 0; padding: 15px 0 0 0;">Updates für Server:</h2>
+        <div class="popup-content">
+            <span id="closeSelectPopup" class="popup-close" onclick="closeSelectPopup()" title="Schließen">&times;</span>
+
+            <div class="popup-header">
+                <h2 id="selectUpdateServerTitle">Updates für Server:</h2>
+                <div class="cve-legend">
+                    <span class="cve-badge cve-high">High</span>
+                    <span class="cve-badge cve-medium">Medium</span>
+                    <span class="cve-badge cve-low">Low</span>
+                    <span class="cve-badge cve-unrated">Unbewertet</span>
+                    <span class="cve-badge cve-eol">End-of-Life</span>
+                    <span class="cve-badge cve-open-only">Nur offene CVEs</span>
+                </div>
+                <div id="cveInfo" class="cve-info"></div>
             </div>
 
-            <!-- Scrollable Table Container -->
-            <div style="flex: 1; overflow-y: auto; margin: 15px 0;">
+            <div class="popup-body">
                 <table id="updateTable">
                     <thead>
                         <tr>
-                            <th>Auswahl</th>
+                            <th></th>
                             <th>Paket</th>
-                            <th>Aktuelle Version</th>
-                            <th>Update auf Version</th>
+                            <th>Aktuell</th>
+                            <th>Neu</th>
+                            <th>Sicherheit</th>
                         </tr>
                     </thead>
                     <tbody id="updateCheckboxes">
@@ -91,27 +99,26 @@
                 </table>
             </div>
 
-            <!-- Fixed Footer -->
-            <div style="position: sticky; bottom: 0; background: #333; padding: 15px 0 0 0; border-top: 1px solid #555;">
+            <div class="popup-footer">
                 <button class="action-button" onclick="startSelectedUpdate()">Ausgewählte Updates installieren</button>
-                <p id="selectedUpdateError" style="color: red; display: none; margin-top: 10px;">Bitte wählen Sie mindestens ein Update aus.</p>
+                <p id="selectedUpdateError" style="color: #e5484d; display: none;">Bitte wählen Sie mindestens ein Update aus.</p>
             </div>
         </div>
     </div>
 
     <div id="addServerPopup" class="popup" style="display: none;">
         <div class="popup-content">
-            <span onclick="closeAddServerPopup()">&times;&nbsp;&nbsp;</span>
+            <span class="popup-close" onclick="closeAddServerPopup()" title="Schließen">&times;</span>
             <h2>Neuen Server hinzufügen</h2>
             <input type="text" id="newServerIp" placeholder="IP-Adresse des Clients (z.B. 192.168.1.10)" required>
             <button class="action-button" onclick="addAndConnectServer()">Server hinzufügen & Verbinden</button>
-            <p id="addServerError" style="color: red; display: none; margin-top: 10px;">Bitte geben Sie eine gültige IP-Adresse ein.</p>
+            <p id="addServerError" style="color: #e5484d; display: none; margin-top: 10px;">Bitte geben Sie eine gültige IP-Adresse ein.</p>
         </div>
     </div>
 
     <div id="schedulePopup" class="popup" style="display: none;">
         <div class="popup-content">
-            <span id="closeSchedulePopupBtn" onclick="closeSchedulePopup()">&times;&nbsp;&nbsp;</span>
+            <span id="closeSchedulePopupBtn" class="popup-close" onclick="closeSchedulePopup()" title="Schließen">&times;</span>
             <h2 id="scheduleServerTitle">Intervall für Server:</h2>
             <input type="hidden" id="scheduleServerId">
             <input type="hidden" id="scheduleServerIp">
@@ -119,17 +126,17 @@
             <div class="schedule-options">
                 <label>
                     <input type="radio" name="scheduleType" value="disabled" onchange="toggleScheduleOptions()"> Deaktiviert
-                </label><br>
+                </label>
                 <label>
                     <input type="radio" name="scheduleType" value="hourly" onchange="toggleScheduleOptions()"> Stündlich
-                </label><br>
+                </label>
                 <label>
                     <input type="radio" name="scheduleType" value="daily" onchange="toggleScheduleOptions()"> Täglich um
                     <input type="time" id="dailyTime" value="03:00" disabled> Uhr
-                </label><br>
+                </label>
                 <label>
                     <input type="radio" name="scheduleType" value="weekly" onchange="toggleScheduleOptions()"> Jeden
-                    <select id="weeklyDay" disabled style="width: 150px; padding: 5px;">
+                    <select id="weeklyDay" disabled>
                         <option value="0">Sonntag</option>
                         <option value="1">Montag</option>
                         <option value="2">Dienstag</option>
@@ -143,24 +150,24 @@
                 </label>
             </div>
 
-            <div style="margin: 20px 0; padding: 15px 0; border-top: 1px solid #555;">
+            <div class="schedule-section">
                 <label>
                     <input type="checkbox" id="enableZusatzScript"> Zusatz Skript mit ausführen
                 </label>
             </div>
 
             <button class="action-button" onclick="saveSchedule()">Intervall speichern</button>
-            <p id="scheduleStatus" style="color: green; margin-top: 10px;"></p>
+            <p id="scheduleStatus" style="color: #3fb950; margin-top: 10px;"></p>
         </div>
     </div>
 
     <div id="changePasswordPopup" class="popup" style="display: none;">
     <div class="popup-content">
-        <span id="closeChangePasswordPopupBtn" onclick="closeChangePasswordPopup()">&times;&nbsp;&nbsp;</span>
+        <span id="closeChangePasswordPopupBtn" class="popup-close" onclick="closeChangePasswordPopup()" title="Schließen">&times;</span>
         <h2>Passwort ändern</h2>
-        <input type="password" id="oldPassword" placeholder="Altes Passwort" required style="margin-bottom: 10px;">
-        <input type="password" id="newPassword" placeholder="Neues Passwort" required style="margin-bottom: 10px;">
-        <input type="password" id="confirmNewPassword" placeholder="Neues Passwort bestätigen" required style="margin-bottom: 10px;">
+        <input type="password" id="oldPassword" placeholder="Altes Passwort" required>
+        <input type="password" id="newPassword" placeholder="Neues Passwort" required>
+        <input type="password" id="confirmNewPassword" placeholder="Neues Passwort bestätigen" required>
         <button class="action-button" onclick="submitChangePassword()">Passwort aktualisieren</button>
         <p id="passwordChangeStatus" style="color: red; margin-top: 10px;"></p>
     </div>
@@ -168,13 +175,13 @@
 
 <div id="userManagementPopup" class="popup" style="display: none;">
     <div class="popup-content">
-        <span id="closeUserManagementPopupBtn" onclick="closeUserManagementPopup()">&times;&nbsp;&nbsp;</span>
+        <span id="closeUserManagementPopupBtn" class="popup-close" onclick="closeUserManagementPopup()" title="Schließen">&times;</span>
         <h2>👥 Benutzerverwaltung</h2>
 
         <h3>Neuen Benutzer anlegen</h3>
-        <input type="text" id="newUsername" placeholder="Benutzername" required style="margin-bottom: 10px;">
-        <input type="password" id="newUserPassword" placeholder="Passwort" required style="margin-bottom: 10px;">
-        <label>
+        <input type="text" id="newUsername" placeholder="Benutzername" required>
+        <input type="password" id="newUserPassword" placeholder="Passwort" required>
+        <label style="display: block; margin-bottom: 12px;">
             <input type="checkbox" id="newUserIsAdmin"> Administrator
         </label>
         <button class="action-button" onclick="createUser()">Benutzer erstellen</button>
@@ -425,7 +432,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('selectUpdateServerTitle').textContent = `Updates für Server: ${ip}`;
 
             const tableBody = document.getElementById('updateCheckboxes');
-            tableBody.innerHTML = '<tr><td colspan="4">Lade Schwachstellendaten...</td></tr>';
+            const cveInfo = document.getElementById('cveInfo');
+            tableBody.innerHTML = '<tr><td colspan="5" style="color: #9aa1ab;">Lade Schwachstellendaten...</td></tr>';
+            cveInfo.textContent = '';
+            cveInfo.classList.remove('cve-info-warn');
 
             // Schwachstellendaten vom Server abrufen
             let vulnerabilities = [];
@@ -434,16 +444,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 if (data.success && data.vulnerabilities) {
                     vulnerabilities = data.vulnerabilities;
+                    const hints = [`CVE-Datenbank: Stand ${data.cveLastUpdate || 'unbekannt'}`];
+                    if (data.distroCovered === false) {
+                        hints.push(`Der Debian Security Tracker liefert für "${data.distroName}" keine Daten mehr (veraltet / End-of-Life)`);
+                    }
+                    if (!data.sourceMapAvailable) {
+                        hints.push('Quellpaket-Zuordnung fehlt - bitte Daten des Servers neu sammeln');
+                    }
+                    cveInfo.textContent = hints.join(' | ');
+                    cveInfo.classList.toggle('cve-info-warn', hints.length > 1);
+                } else if (data.error) {
+                    cveInfo.textContent = `CVE-Prüfung nicht möglich: ${data.error}`;
+                    cveInfo.classList.add('cve-info-warn');
                 }
             } catch (error) {
                 console.error('Fehler beim Laden der Schwachstellendaten:', error);
+                cveInfo.textContent = 'CVE-Prüfung fehlgeschlagen';
+                cveInfo.classList.add('cve-info-warn');
             }
 
             // Tabelle leeren und neu befüllen
             tableBody.innerHTML = '';
 
-            //const updateRegex = /^(\S+?)(?:\/\S+)?\s(\S+).*\[aktualisierbar von:\s(\S+)\]/;
             const updateRegex = /^(\S+?)(?:\/\S+)?\s+(\S+).*?\[(?:aktualisierbar von|upgradable from):\s+(\S+)\]/;
+
+            const severityClass = {
+                'high': 'cve-high',
+                'medium': 'cve-medium',
+                'low': 'cve-low',
+                'not yet assigned': 'cve-unrated',
+                'end-of-life': 'cve-eol'
+            };
+            const severityLabel = {
+                'high': 'HIGH',
+                'medium': 'MEDIUM',
+                'low': 'LOW',
+                'not yet assigned': 'UNBEWERTET',
+                'end-of-life': 'END-OF-LIFE'
+            };
+            const formatCves = (cves, max) => {
+                const lines = cves.slice(0, max).map(c =>
+                    `${c.cve_id} [${severityLabel[c.priority_level] || c.priority_level}]` +
+                    (c.description ? ` - ${c.description.substring(0, 120)}` : ''));
+                if (cves.length > max) lines.push(`... und ${cves.length - max} weitere`);
+                return lines.join('\n');
+            };
 
             updates.forEach((updateLine) => {
                 const match = updateLine.match(updateRegex);
@@ -458,39 +503,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     newVersion = match[2].split(' ')[0];
                     oldVersion = match[3];
                     updateValue = packageName;
-              //   else {
-                    // Fallback: Versuche, Paketname aus der ersten Spalte zu extrahieren
-              //      const parts = updateLine.split(/\s+/);
-              //      if (parts.length > 0) {
-              //          packageName = parts[0].split('/')[0]; // Entferne Distribution falls vorhanden
-              //          updateValue = packageName;
-              //      }
                 }
 
-                // Prüfen, ob es eine Schwachstelle für dieses Paket gibt
+                // Prüfen, ob es CVEs für dieses Paket gibt
                 const vulnerability = vulnerabilities.find(v => v.package_name === packageName);
 
-                // Hintergrundfarbe basierend auf der Risikostufe festlegen
-                let backgroundColor = '#000000'; // Grün als Standard (kein bekanntes Risiko)
+                let rowClass = '';
+                let securityText = '';
                 let titleText = 'Keine bekannten Schwachstellen';
 
                 if (vulnerability) {
-                    const priority = vulnerability.priority_level ? vulnerability.priority_level.toLowerCase() : '';
+                    const fixed = vulnerability.fixed_cves || [];
+                    const open = vulnerability.open_cves || [];
+                    const titleParts = [];
 
-                    if (priority === 'high') {
-                        backgroundColor = '#C03030'; // Rot
-                        titleText = `CVE: ${vulnerability.cve_id} - HIGH RISK - ${vulnerability.description || ''}`;
-                    } else if (priority === 'medium') {
-                        backgroundColor = '#E58022'; // Orange/Gelb
-                        titleText = `CVE: ${vulnerability.cve_id} - MEDIUM RISK - ${vulnerability.description || ''}`;
-                    } else if (priority === 'end-of-life' || priority === 'eol') {
-                        backgroundColor = '#ACA6A6'; // Grau
-                        titleText = `CVE: ${vulnerability.cve_id} - END-OF-LIFE - ${vulnerability.description || ''}`;
+                    if (fixed.length > 0) {
+                        rowClass = severityClass[vulnerability.priority_level] || 'cve-unrated';
+                        securityText = `${severityLabel[vulnerability.priority_level] || vulnerability.priority_level} (${fixed.length} CVE${fixed.length > 1 ? 's' : ''})`;
+                        titleParts.push(`Update behebt ${fixed.length} CVE(s):\n${formatCves(fixed, 15)}`);
                     }
+                    if (open.length > 0) {
+                        if (!rowClass) {
+                            rowClass = 'cve-open-only';
+                            securityText = `${open.length} offen`;
+                        } else {
+                            securityText += ` +${open.length} offen`;
+                        }
+                        titleParts.push(`Nach dem Update weiterhin offen (${open.length}):\n${formatCves(open, 5)}`);
+                    }
+                    if (vulnerability.source_name && vulnerability.source_name !== packageName) {
+                        titleParts.unshift(`Quellpaket: ${vulnerability.source_name}`);
+                    }
+                    titleText = titleParts.join('\n\n');
                 }
 
                 const tr = document.createElement('tr');
-                tr.style.backgroundColor = backgroundColor;
+                if (rowClass) tr.className = rowClass;
                 tr.title = titleText;
 
                 tr.innerHTML = `
@@ -500,6 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${packageName}</td>
                     <td>${oldVersion}</td>
                     <td>${newVersion}</td>
+                    <td>${securityText ? `<span class="cve-badge">${securityText}</span>` : ''}</td>
                 `;
 
                 tableBody.appendChild(tr);
@@ -1032,6 +1081,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let sshSocket = null;
         let currentSSHHost = '';
         let terminalInstance = null;
+        let terminalFitAddon = null;
+        let terminalResizeObserver = null;
 
         // Lade xterm.js von lokalen node_modules
         function loadXtermLibraries() {
@@ -1039,6 +1090,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 new Promise((resolve, reject) => {
                     const script = document.createElement('script');
                     script.src = '/node_modules/xterm/lib/xterm.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                }),
+                new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = '/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js';
                     script.onload = resolve;
                     script.onerror = reject;
                     document.head.appendChild(script);
@@ -1078,8 +1136,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (typeof Terminal !== 'undefined') {
                     // Nutze xterm.js wenn verfügbar
                     terminalInstance = new Terminal({
-                        cols: 120,
-                        rows: 30,
                         theme: {
                             background: '#000000',
                             foreground: '#00ff00'
@@ -1090,6 +1146,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     
                     terminalInstance.open(container);
+
+                    // Terminal an die Größe des Popups anpassen (auch bei Fenster-Resize)
+                    if (typeof FitAddon !== 'undefined') {
+                        terminalFitAddon = new FitAddon.FitAddon();
+                        terminalInstance.loadAddon(terminalFitAddon);
+                        terminalResizeObserver = new ResizeObserver(() => fitTerminal());
+                        terminalResizeObserver.observe(container);
+                        fitTerminal();
+                    }
+
                     terminalInstance.write('Bereit zur Verbindung. Bitte Anmeldedaten eingeben.\r\n');
                     console.log('[CONSOLE] xterm.js Terminal initialisiert');
                 } else {
@@ -1102,6 +1168,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[CONSOLE] Fehler beim Laden von xterm.js:', error);
                 // Fallback auf einfaches Terminal
                 terminalInstance = createSimpleTerminal();
+            }
+        }
+
+        function fitTerminal() {
+            if (!terminalFitAddon || !terminalInstance) return;
+            try {
+                terminalFitAddon.fit();
+            } catch (e) {
+                return; // Container noch nicht sichtbar
+            }
+            if (sshSocket && sshSocket.readyState === WebSocket.OPEN) {
+                sshSocket.send(JSON.stringify({ type: 'resize', cols: terminalInstance.cols, rows: terminalInstance.rows }));
             }
         }
 
@@ -1198,6 +1276,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 sshSocket.close();
                 sshSocket = null;
             }
+            if (terminalResizeObserver) {
+                terminalResizeObserver.disconnect();
+                terminalResizeObserver = null;
+            }
+            terminalFitAddon = null;
             if (terminalInstance && terminalInstance.dispose) {
                 terminalInstance.dispose();
             }
@@ -1241,7 +1324,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 sshSocket.onopen = () => {
                     console.log('[SSH] WebSocket geöffnet');
-                    sshSocket.send(JSON.stringify({ type: 'auth', password: password }));
+                    sshSocket.send(JSON.stringify({
+                        type: 'auth',
+                        password: password,
+                        cols: terminalInstance.cols,
+                        rows: terminalInstance.rows
+                    }));
                     document.getElementById('authForm').style.display = 'none';
                     terminalInstance.write('Authentifizierung gesendet...\r\n');
                     
@@ -1628,12 +1716,12 @@ async function deleteUser(id, username) {
         <div class="popup-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h2 id="remoteConsoleTitle" style="margin: 0;">Remote Console</h2>
-                <span id="closeRemoteConsole" onclick="closeRemoteConsole()" style="cursor: pointer; font-size: 28px; color: #ccc;">&times;</span>
+                <span id="closeRemoteConsole" class="popup-close" onclick="closeRemoteConsole()" title="Schließen" style="position: static;">&times;</span>
             </div>
             <div id="terminalContainer" style="background: #000;"></div>
             <div id="authForm" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <input type="text" id="sshUsername" placeholder="SSH Benutzername" required style="padding: 8px; flex: 0 1 auto;">
-                <input type="password" id="sshPassword" placeholder="SSH Passwort" required style="padding: 8px; flex: 0 1 auto;">
+                <input type="text" id="sshUsername" placeholder="SSH Benutzername" required style="display: inline-block; width: auto; margin: 0; flex: 0 1 auto;">
+                <input type="password" id="sshPassword" placeholder="SSH Passwort" required style="display: inline-block; width: auto; margin: 0; flex: 0 1 auto;">
                 <button class="action-button" onclick="connectSSHTerminal()" style="flex: 0 0 auto;">Verbinden</button>
                 <p id="sshAuthStatus" style="color: #ff6b6b; margin: 0; font-size: 12px; width: 100%; display: none;"></p>
             </div>

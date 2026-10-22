@@ -200,77 +200,6 @@
             opacity: 1;
         }
 
-/* Popup-Fenster-Stile */
-.popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: #333;
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    padding: 20px;
-    color: #fff;
-}
-
-.popup-content {
-    max-width: 1500px;
-    max-height: 400px;
-    overflow-y: auto;
-    position: relative;
-}
-
-#closePopup {
-    position: absolute;
-    top: -5px;
-    right: 5px;
-    cursor: pointer;
-    font-size: 28px;
-    color: #ccc;
-    z-index: 10001;
-}
-
-#closeSelectPopup {
-    position: absolute;
-    top: -5px;
-    right: 5px;
-    cursor: pointer;
-    font-size: 28px;
-    color: #ccc;
-    z-index: 10001;
-}
-
-#closeChangePasswordPopupBtn {
-    position: absolute;
-    top: -5px;
-    right: 5px;
-    cursor: pointer;
-    font-size: 28px;
-    color: #ccc;
-    z-index: 10001;
-}
-
-#closeUserManagementPopupBtn {
-    position: absolute;
-    top: -5px;
-    right: 5px;
-    cursor: pointer;
-    font-size: 28px;
-    color: #ccc;
-    z-index: 10001;
-}
-
-#closeSchedulePopupBtn {
-    position: absolute;
-    top: -5px;
-    right: 5px;
-    cursor: pointer;
-    font-size: 28px;
-    color: #ccc;
-    z-index: 10001;
-}
-
 pre {
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -362,12 +291,15 @@ pre {
 /* --- XTERM TERMINAL STYLING --- */
 #terminalContainer {
     background: #000;
-    padding: 10px;
-    border-radius: 4px;
+    padding: 0;
+    border-radius: 6px;
     font-family: 'Courier New', monospace;
 }
 
+/* Abstand am .xterm-Element, damit das Fit-Addon ihn bei der Größenberechnung abzieht */
 #terminalContainer .xterm {
+    padding: 8px;
+    box-sizing: border-box;
     font-family: 'Courier New', monospace;
     font-size: 12px;
 }
@@ -411,7 +343,16 @@ pre {
 #terminalContainer {
     flex: 1 !important;
     overflow: hidden !important;
-    min-height: 500px;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+#terminalContainer .xterm {
+    height: 100%;
+}
+
+#remoteConsolePopup .popup-content > div:first-child h2 {
+    margin: 0;
 }
 
 #authForm {
@@ -429,3 +370,304 @@ pre {
 }
 
 
+/* =====================================================================
+   POPUPS (modernes, kompaktes Layout)
+   ===================================================================== */
+.popup {
+    --popup-bg: #1b1e23;
+    --popup-surface: #23272e;
+    --popup-border: rgba(255, 255, 255, 0.08);
+    --popup-text: #e6e8eb;
+    --popup-muted: #9aa1ab;
+    --popup-accent: #3498db;
+
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    min-width: min(420px, 92vw);
+    max-width: 92vw;
+    padding: 20px 24px;
+    box-sizing: border-box;
+    background-color: var(--popup-bg);
+    color: var(--popup-text);
+    border: 1px solid var(--popup-border);
+    border-radius: 12px;
+    font-size: 14px;
+    /* zweiter Schatten dunkelt die Seite hinter dem Popup ab */
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+    animation: popup-in 0.15s ease-out;
+}
+
+@keyframes popup-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.popup-content {
+    position: relative;
+    max-width: 1500px;
+    max-height: min(80vh, 760px);
+    overflow-y: auto;
+}
+
+.popup h2 {
+    margin: 0 0 16px 0;
+    padding-right: 40px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.popup h3 {
+    margin: 18px 0 10px 0;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--popup-muted);
+}
+
+.popup hr {
+    border: none;
+    border-top: 1px solid var(--popup-border);
+    margin: 18px 0;
+}
+
+.popup p {
+    font-size: 13px;
+}
+
+/* Schließen-Button */
+.popup-close {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 10001;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--popup-muted);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.popup-close:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+/* Eingabefelder */
+.popup input[type="text"],
+.popup input[type="password"],
+.popup input[type="time"],
+.popup select {
+    padding: 8px 10px;
+    background-color: #121418;
+    color: var(--popup-text);
+    border: 1px solid #333a44;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.popup input[type="text"],
+.popup input[type="password"] {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.popup input:focus,
+.popup select:focus {
+    outline: none;
+    border-color: var(--popup-accent);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.25);
+}
+
+.popup input:disabled,
+.popup select:disabled {
+    opacity: 0.45;
+}
+
+.popup input[type="checkbox"],
+.popup input[type="radio"] {
+    accent-color: var(--popup-accent);
+    width: 15px;
+    height: 15px;
+    vertical-align: middle;
+}
+
+.popup label {
+    font-size: 13px;
+}
+
+.popup .action-button {
+    padding: 8px 16px;
+    border-radius: 6px;
+}
+
+/* Tabellen in Popups */
+.popup table {
+    margin-top: 0;
+    font-size: 13px;
+}
+
+.popup th,
+.popup td {
+    padding: 7px 10px;
+    border: none;
+    border-bottom: 1px solid var(--popup-border);
+}
+
+.popup th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--popup-surface);
+    color: var(--popup-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.popup tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Kopf- und Fußbereich (Update-Auswahl) */
+.popup-header {
+    flex-shrink: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--popup-border);
+}
+
+.popup-header h2 {
+    margin-bottom: 0;
+}
+
+.popup-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 12px 0;
+}
+
+.popup-footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--popup-border);
+}
+
+.popup-footer p {
+    margin: 0;
+}
+
+#selectUpdatePopup {
+    width: min(1000px, 92vw);
+}
+
+#selectUpdatePopup .popup-content {
+    display: flex;
+    flex-direction: column;
+}
+
+#updateTable td:first-child,
+#updateTable th:first-child {
+    width: 1%;
+    text-align: center;
+}
+
+#updateTable td:nth-child(3),
+#updateTable td:nth-child(4) {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: #c8ccd2;
+}
+
+/* Update-Log */
+#updateLog {
+    max-height: 55vh;
+    margin: 0;
+    background-color: #0f1114;
+    border: 1px solid var(--popup-border);
+    border-radius: 8px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+#updatePopup {
+    width: min(900px, 92vw);
+}
+
+/* Intervall-Popup */
+.schedule-options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.schedule-section {
+    margin: 16px 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--popup-border);
+}
+
+/* --- CVE-Markierung im Update-Auswahl-Popup --- */
+#updateTable tr[class^="cve-"] td:first-child { box-shadow: inset 3px 0 0 var(--cve-color); }
+#updateTable tr.cve-high { --cve-color: #e5484d; background-color: rgba(229, 72, 77, 0.14); }
+#updateTable tr.cve-medium { --cve-color: #f08c2e; background-color: rgba(240, 140, 46, 0.13); }
+#updateTable tr.cve-low { --cve-color: #e2c541; background-color: rgba(226, 197, 65, 0.10); }
+#updateTable tr.cve-unrated { --cve-color: #4a90d9; background-color: rgba(74, 144, 217, 0.10); }
+#updateTable tr.cve-eol { --cve-color: #9aa1ab; background-color: rgba(154, 161, 171, 0.10); }
+#updateTable tr.cve-open-only { --cve-color: #5c636e; }
+
+.cve-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--cve-color);
+    background-color: color-mix(in srgb, var(--cve-color) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cve-color) 45%, transparent);
+}
+
+tr.cve-open-only .cve-badge { color: #9aa1ab; }
+
+.cve-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.cve-legend .cve-badge.cve-high { --cve-color: #e5484d; }
+.cve-legend .cve-badge.cve-medium { --cve-color: #f08c2e; }
+.cve-legend .cve-badge.cve-low { --cve-color: #e2c541; }
+.cve-legend .cve-badge.cve-unrated { --cve-color: #4a90d9; }
+.cve-legend .cve-badge.cve-eol { --cve-color: #9aa1ab; }
+.cve-legend .cve-badge.cve-open-only { --cve-color: #5c636e; color: #9aa1ab; }
+
+.cve-info {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--popup-muted);
+}
+
+.cve-info.cve-info-warn { color: #f08c2e; }

@@ -1,0 +1,11 @@
+# Abhängigkeiten
+patch-management/node_modules/
+patch-management/package-lock.json
+
+# Laufzeitdateien / Logs
+patch-management/cve.log
+
+# Lokale Sicherungskopien
+*_old
+*_
+*2601

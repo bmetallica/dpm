@@ -345,6 +345,7 @@ sed -i "s/PG_USER=\"[^\"]*\"/PG_USER=\"$PG_USER\"/" /opt/dpm/patch-management/cv
 sed -i "s/PG_PASSWORD=\"[^\"]*\"/PG_PASSWORD=\"$PG_PASS\"/" /opt/dpm/patch-management/cve.sh
 sed -i "s/PG_HOST=\"[^\"]*\"/PG_HOST=\"$PG_HOST\"/" /opt/dpm/patch-management/cve.sh
 sed -i "s/PG_DB=\"[^\"]*\"/PG_DB=\"$PG_DB\"/" /opt/dpm/patch-management/cve.sh
+sed -i "s/PG_PORT=\"[^\"]*\"/PG_PORT=\"$PG_PORT\"/" /opt/dpm/patch-management/cve.sh
 
 chmod +x /opt/dpm/patch-management/cve.sh
 

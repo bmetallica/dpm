@@ -27,10 +27,10 @@ const GLOBAL_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'; // Standardformat
 
 // PostgreSQL-Verbindung einrichten
 const pool = new Pool({
-  user: 'apt4auto',
+  user: 'USERNAME',
   host: 'localhost',
-  database: 'apt',
-  password: 'apt4auto',
+  database: 'DBNAME',
+  password: 'PASSWORD',
   port: 5432,
 });
 
@@ -217,6 +217,12 @@ async function startScheduler() {
             ADD COLUMN IF NOT EXISTS updates_locked boolean DEFAULT false
         `);
         
+        // Füge src_map Spalte hinzu (JSON: Binärpaket -> Quellpaket für den CVE-Abgleich)
+        await pool.query(`
+            ALTER TABLE zustand
+            ADD COLUMN IF NOT EXISTS src_map text
+        `);
+
         const result = await pool.query('SELECT server, schedule_type, schedule_time, schedule_day FROM zustand WHERE schedule_type IS NOT NULL');
         result.rows.forEach(row => {
             const cronString = getCronString(row.schedule_type, row.schedule_time, row.schedule_day);
@@ -265,13 +271,40 @@ const runSSH = (ip, command, useSudo = false) => {
     });
 };
 
+/**
+ * Ermittelt für die aktualisierbaren Pakete das zugehörige Quellpaket (Binär -> Quelle),
+ * da der Debian Security Tracker CVEs unter dem Quellpaket führt.
+ */
+async function collectSourceMap(ip, updateList) {
+    const names = [...new Set(updateList
+        .map(line => line.split('/')[0].trim())
+        .filter(name => /^[a-z0-9][a-z0-9+.\-]*$/.test(name)))];
+    if (names.length === 0) return '{}';
+
+    try {
+        const output = await runSSH(ip, `dpkg-query -W -f='\${Package}\\t\${Source}\\n' ${names.join(' ')} 2>/dev/null || true`);
+        const map = {};
+        output.split('\n').forEach(line => {
+            const [pkg, source] = line.split('\t');
+            if (!pkg) return;
+            // Source ist leer, wenn Quell- und Binärname gleich sind; ggf. mit "(version)"
+            map[pkg.trim()] = (source || '').trim().split(' ')[0] || pkg.trim();
+        });
+        return JSON.stringify(map);
+    } catch (error) {
+        console.log(`[WARN] Quellpaket-Zuordnung auf ${ip} fehlgeschlagen: ${error.message}`);
+        return null;
+    }
+}
+
 async function collectDataViaSSH(ip) {
     const data = {
         server: ip,
         sys: 'N/A',
         pu: 0,
         ul: '',
-        root_free: 'N/A'
+        root_free: 'N/A',
+    src_map: null
     };
 
     try {
@@ -296,6 +329,7 @@ async function collectDataViaSSH(ip) {
         }
         data.ul = updateList.join('\n');
         data.pu = updateList.length;
+        data.src_map = await collectSourceMap(ip, updateList);
         data.server = ip;
         return data;
     } catch (error) {
@@ -305,12 +339,12 @@ async function collectDataViaSSH(ip) {
 }
 
 async function insertOrUpdateData(data) {
-    const { server, sys, pu, ul, root_free } = data;
+    const { server, sys, pu, ul, root_free, src_map } = data;
     const current_datetime = new Date().toISOString();
 
     const query = `
-    INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, is_offline)
-    VALUES ($1, $2, $3, $4, $5, $6, false)
+    INSERT INTO zustand (server, sys, pu, ul, root_free, last_run, is_offline, src_map)
+    VALUES ($1, $2, $3, $4, $5, $6, false, $7)
     ON CONFLICT (server)
     DO UPDATE SET
     sys=$2,
@@ -318,10 +352,11 @@ async function insertOrUpdateData(data) {
     ul=$4,
     root_free=$5,
     last_run=$6,
-    is_offline=false;
+    is_offline=false,
+    src_map=COALESCE($7, zustand.src_map);
     `;
     console.log(current_datetime);
-    await pool.query(query, [server, sys, pu, ul, root_free, current_datetime]);
+    await pool.query(query, [server, sys, pu, ul, root_free, current_datetime, src_map]);
 }
 
 function sanitizeData(obj) {
@@ -346,227 +381,191 @@ function sanitizeData(obj) {
 
 
 /**
- * Vergleicht zwei Debian-Versionsnummern.
+ * Vergleicht zwei Debian-Versionsnummern nach dpkg-Regeln (Epoch, Upstream, Revision, '~').
+ * Gibt <0 zurück, wenn v1 < v2; 0, wenn gleich; >0, wenn v1 > v2.
  */
-function compareVersions(v1, op, v2) {
-    return new Promise((resolve, reject) => {
-        const cleanV1 = v1.replace(/'/g, '').trim();
-        const cleanV2 = v2.replace(/'/g, '').trim();
-        const cleanOp = op.trim();
-
-        const command = `dpkg --compare-versions '${cleanV1}' ${cleanOp} '${cleanV2}'`;
-
-        exec(command, { timeout: 1000 }, (error, stdout, stderr) => {
-            if (error) {
-                if (error.code === 1 || error.code === 2) {
-                    return resolve(false);
-                }
-                console.error(`[COMPARE-ERROR] dpkg-Vergleich fehlgeschlagen (${cleanV1} ${cleanOp} ${cleanV2}):`, stderr);
-                return reject(new Error(`Versionsvergleich fehlgeschlagen: ${error.message}`));
-            }
-            resolve(true);
-        });
-    });
+function debVersionOrder(c) {
+    if (c === undefined) return 0;
+    if (c >= '0' && c <= '9') return 0;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) return c.charCodeAt(0);
+    if (c === '~') return -1;
+    return c.charCodeAt(0) + 256;
 }
 
+function isDigit(c) {
+    return c !== undefined && c >= '0' && c <= '9';
+}
+
+function debVerRevCmp(a, b) {
+    let i = 0, j = 0;
+    while (i < a.length || j < b.length) {
+        let firstDiff = 0;
+        while ((i < a.length && !isDigit(a[i])) || (j < b.length && !isDigit(b[j]))) {
+            const ac = debVersionOrder(a[i]);
+            const bc = debVersionOrder(b[j]);
+            if (ac !== bc) return ac - bc;
+            i++; j++;
+        }
+        while (a[i] === '0') i++;
+        while (b[j] === '0') j++;
+        while (isDigit(a[i]) && isDigit(b[j])) {
+            if (!firstDiff) firstDiff = a.charCodeAt(i) - b.charCodeAt(j);
+            i++; j++;
+        }
+        if (isDigit(a[i])) return 1;
+        if (isDigit(b[j])) return -1;
+        if (firstDiff) return firstDiff;
+    }
+    return 0;
+}
+
+function parseDebVersion(v) {
+    let rest = v.trim();
+    let epoch = 0;
+    const colon = rest.indexOf(':');
+    if (colon > 0 && /^\d+$/.test(rest.substring(0, colon))) {
+        epoch = parseInt(rest.substring(0, colon), 10);
+        rest = rest.substring(colon + 1);
+    }
+    const dash = rest.lastIndexOf('-');
+    return {
+        epoch,
+        upstream: dash >= 0 ? rest.substring(0, dash) : rest,
+        revision: dash >= 0 ? rest.substring(dash + 1) : ''
+    };
+}
+
+function compareDebVersions(v1, v2) {
+    const a = parseDebVersion(v1);
+    const b = parseDebVersion(v2);
+    if (a.epoch !== b.epoch) return a.epoch - b.epoch;
+    return debVerRevCmp(a.upstream, b.upstream) || debVerRevCmp(a.revision, b.revision);
+}
+
+// Rangfolge der Debian-Urgency-Stufen (höher = kritischer)
+const CVE_SEVERITY_RANK = {
+    'high': 4,
+    'medium': 3,
+    'low': 2,
+    'not yet assigned': 1,
+    'end-of-life': 0
+};
+
+// Signierte Template-Pakete werden im Security Tracker unter dem eigentlichen Quellpaket geführt
+const CVE_SOURCE_ALIASES = [
+    [/^linux-signed(-.+)?$/, 'linux'],
+    [/^grub-efi-.+-signed$/, 'grub2'],
+    [/^shim-signed$/, 'shim'],
+    [/^fwupd-.+-signed$/, 'fwupd']
+];
+
+function normalizeSourceName(name) {
+    const alias = CVE_SOURCE_ALIASES.find(([regex]) => regex.test(name));
+    return alias ? alias[1] : name;
+}
 
 /**
- * Vergleicht zwei Debian-Versionsnummern.
- * Gibt 1 zurück, wenn v1 > v2; -1, wenn v1 < v2; 0, wenn v1 == v2.
- * Nutzt die Shell, um 'dpkg --compare-versions' zu nutzen, da Node.js keine native
- * dpkg-Versionslogik hat und diese sehr komplex ist.
+ * Parst die Ausgabe von 'apt list --upgradable' in { packageName, newVersion, installedVersion }.
  */
-async function getVulnerableUpdates(ip, distroName, updatesListRaw) {
+function parseUpgradableList(updatesListRaw) {
+    const updateRegex = /^([^\/\s]+)\/\S+\s+(\S+).*?\[(?:aktualisierbar von|upgradable from):\s+([^\]\s]+)/;
+    return updatesListRaw.split('\n')
+    .map(line => line.trim().match(updateRegex))
+    .filter(Boolean)
+    .map(m => ({ packageName: m[1], newVersion: m[2], installedVersion: m[3] }));
+}
+
+/**
+ * Ermittelt für jedes aktualisierbare Paket die relevanten CVEs.
+ * Debian führt CVEs unter dem Quellpaket, daher wird srcMap (Binär -> Quelle) benötigt.
+ * Ein CVE gilt als "durch das Update behoben", wenn installiert < fixed_version <= neue Version.
+ * Ein CVE gilt als "offen", wenn es keinen Fix gibt oder der Fix neuer als das Update ist.
+ */
+async function getVulnerableUpdates(ip, distroName, updatesListRaw, srcMap = {}) {
     if (!updatesListRaw || updatesListRaw.length === 0) {
         return [];
     }
 
-    console.log(`[VULN-CHECK] Raw Updates für ${ip}:`, updatesListRaw.substring(0, 200));
-
-    // 1. Installierte Pakete und Versionen parsen
-    const installedPackages = updatesListRaw.split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0 && !line.startsWith('Listing') && !line.startsWith('Auflistung'))
-    .map(line => {
-        console.log(`[PARSE] Verarbeite Zeile: "${line}"`);
-
-        // DEUTSCHE Version: "aktualisierbar von:"
-        let match = line.match(/^([^\/]+)\/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[aktualisierbar von:\s+([^\]]+)\]/);
-
-        // Falls nicht gefunden, versuche ENGLISCHE Version: "upgradable from:"
-        if (!match) {
-            match = line.match(/^([^\/]+)\/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]/);
-        }
-
-        if (match) {
-            const packageName = match[1];
-            const installedVersion = match[5].trim();
-
-            console.log(`[MATCH-SUCCESS] Paket: ${packageName}, Installiert: ${installedVersion}`);
-
-            return {
-                packageName,
-                installedVersion,
-                currentDistro: match[2]
-            };
-        }
-
-        // Fallback: Versuche einfacheres Pattern
-        // Beispiel: "bind9/bullseye 1:9.16.50-1~deb11u1 amd64 [aktualisierbar von: 1:9.16.48-1]"
-        const simplifiedMatch = line.match(/^([^\/\s]+).*\[(?:aktualisierbar|upgradable) (?:von|from):\s+([^\]]+)\]/);
-
-        if (simplifiedMatch) {
-            const packageName = simplifiedMatch[1];
-            const installedVersion = simplifiedMatch[2].trim();
-
-            console.log(`[FALLBACK-SUCCESS] Paket: ${packageName}, Installiert: ${installedVersion}`);
-
-            return {
-                packageName,
-                installedVersion,
-                currentDistro: distroName
-            };
-        }
-
-        console.log(`[PARSE-FAILED] Konnte Zeile nicht parsen: "${line}"`);
-        return null;
-    })
-    .filter(p => p && p.installedVersion);
-
-    console.log(`[VULN-CHECK] Gefundene Pakete: ${installedPackages.length}`);
-    console.log(`[VULN-CHECK] Pakete:`, installedPackages);
-
-    if (installedPackages.length === 0) {
-        console.log('[VULN-CHECK] Keine Pakete gefunden - beende Analyse');
+    const packages = parseUpgradableList(updatesListRaw);
+    if (packages.length === 0) {
         return [];
     }
 
-    // 2. Datenbank-Abfrage nach CVEs für ALLE gefundenen Pakete
-    const packageNames = installedPackages.map(p => p.packageName);
+    packages.forEach(p => {
+        p.sourceName = normalizeSourceName(srcMap[p.packageName] || p.packageName);
+    });
+    const sourceNames = [...new Set(packages.map(p => p.sourceName))];
 
-    console.log(`[VULN-CHECK] Suche CVEs für ${packageNames.length} Pakete in Distro: ${distroName}`);
-
-    // WICHTIG: Die Spaltenreihenfolge in deiner DB ist:
-    // cve_id, package_name, distro_name, vulnerable_version, fixed_version, current_status, priority_level, priority_color, description
-    const query = `
-    SELECT cve_id, package_name, fixed_version, priority_level, priority_color, current_status, description
+    const cveResult = await pool.query(`
+    SELECT cve_id, package_name, fixed_version, priority_level, current_status, description
     FROM debian_cve
-    WHERE package_name = ANY($1)
-    AND (distro_name = $2 OR distro_name = 'all')
-    ORDER BY
-    CASE priority_level
-    WHEN 'high' THEN 1
-    WHEN 'medium' THEN 2
-    ELSE 3
-    END, cve_id;
-    `;
+    WHERE package_name = ANY($1) AND distro_name = $2
+    `, [sourceNames, distroName]);
 
-    console.log('[DB-QUERY] Parameters:', { packageNames, distroName });
+    const cvesBySource = {};
+    cveResult.rows.forEach(row => {
+        (cvesBySource[row.package_name] = cvesBySource[row.package_name] || []).push(row);
+    });
 
-    const cveResult = await pool.query(query, [packageNames, distroName]);
-    const relevantCves = cveResult.rows;
+    console.log(`[VULN-CHECK] ${ip} (${distroName}): ${packages.length} Pakete, ${sourceNames.length} Quellpakete, ${cveResult.rows.length} CVE-Einträge`);
 
-    console.log(`[VULN-CHECK] Gefundene CVEs in DB: ${relevantCves.length}`);
+    const result = [];
+    for (const pkg of packages) {
+        const cves = cvesBySource[pkg.sourceName];
+        if (!cves) continue;
 
-    if (relevantCves.length > 0) {
-        console.log('[DB-RESULT] Erste 3 CVEs:', relevantCves.slice(0, 3).map(c => ({
-            cve: c.cve_id,
-            pkg: c.package_name,
-            fixed: c.fixed_version,
-            status: c.current_status
-        })));
-    } else {
-        console.log('[DB-RESULT] Keine CVEs gefunden. Teste manuell in der DB:');
-        console.log(`  SELECT DISTINCT distro_name FROM debian_cve WHERE package_name = ANY(ARRAY['${packageNames.slice(0, 3).join("','")}']);`);
-        console.log(`  SELECT COUNT(*) FROM debian_cve WHERE distro_name = '${distroName}' OR distro_name = 'all';`);
-    }
+        const fixedByUpdate = [];
+        const stillOpen = [];
 
-    const vulnerableList = [];
+        for (const cve of cves) {
+            const entry = {
+                cve_id: cve.cve_id,
+                priority_level: cve.priority_level,
+                fixed_version: cve.fixed_version,
+                description: cve.description
+            };
 
-    // 3. Iteriere über CVEs und wende die Versionsvergleichslogik an
-    for (const cve of relevantCves) {
-        const installedPackage = installedPackages.find(p => p.packageName === cve.package_name);
+            if (cve.current_status === 'open' || !cve.fixed_version) {
+                stillOpen.push(entry);
+                continue;
+            }
 
-        if (!installedPackage) {
-            console.log(`[SKIP] Kein installiertes Paket gefunden für CVE ${cve.cve_id} (${cve.package_name})`);
-            continue;
-        }
-
-        const installedVer = installedPackage.installedVersion;
-        const fixedVer = cve.fixed_version;
-        const status = cve.current_status;
-
-        console.log(`[CVE-CHECK] ${cve.cve_id} - ${cve.package_name}: Installiert=${installedVer}, Fix=${fixedVer}, Status=${status}`);
-
-        // Regel 1: Wenn der Status 'open' ist, ist das System verwundbar
-        if (status === 'open') {
-            console.log(`[VULNERABLE] ${cve.package_name} - Status ist 'open'`);
-            vulnerableList.push({
-                ...cve,
-                installed_version: installedVer,
-                vulnerable_reason: "Fix ist noch nicht verfügbar (Status: open)."
-            });
-            continue;
-        }
-
-        // Regel 2: Skip resolved/not-affected wenn keine Fixed Version gesetzt
-        if (!fixedVer || fixedVer === 'NULL' || fixedVer === '') {
-            console.log(`[SKIP] ${cve.cve_id} - Keine fixed_version gesetzt, Status: ${status}`);
-            continue;
-        }
-
-        // Regel 3: Versionsvergleich
-        try {
-            const isVulnerable = await compareVersions(installedVer, 'lt', fixedVer);
-
-            console.log(`[VERSION-CHECK] ${cve.cve_id}: dpkg sagt: "${installedVer}" < "${fixedVer}" = ${isVulnerable}, Status=${status}`);
-
-            // WICHTIG: Bei offensichtlich falschen Vergleichen (z.B. 140 < 45) einen Plausibilitäts-Check
-            if (isVulnerable) {
-                // Extrahiere die Major Version Numbers
-                const installedMatch = installedVer.match(/^(\d+)/);
-                const fixedMatch = fixedVer.match(/^(\d+)/);
-
-                if (installedMatch && fixedMatch) {
-                    const installedMajor = parseInt(installedMatch[1]);
-                    const fixedMajor = parseInt(fixedMatch[1]);
-
-                    console.log(`[VERSION-PLAUSIBILITY] Major Versions: Installiert=${installedMajor}, Fix=${fixedMajor}`);
-
-                    // Wenn installierte Major Version deutlich HÖHER ist, ist dpkg wahrscheinlich verwirrt
-                    if (installedMajor > fixedMajor * 2) {
-                        console.log(`[FALSE-POSITIVE] ${cve.cve_id} - dpkg-Vergleich ergibt FALSE POSITIVE. Installiert (${installedMajor}) >> Fix (${fixedMajor})`);
-                        console.log(`[WARNING] Bitte prüfen Sie die fixed_version in der Datenbank für ${cve.cve_id}!`);
-                        continue; // Skip diesen CVE
-                    }
+            try {
+                if (compareDebVersions(pkg.installedVersion, cve.fixed_version) >= 0) {
+                    continue; // installierte Version ist bereits gefixt
                 }
-            }
-
-            if (isVulnerable && status !== 'not-affected') {
-                console.log(`[VULNERABLE] ${cve.package_name} - ${cve.cve_id} - Version zu alt`);
-                vulnerableList.push({
-                    ...cve,
-                    installed_version: installedVer,
-                    vulnerable_reason: `Installierte Version (${installedVer}) ist älter als Fix-Version (${fixedVer}).`
-                });
-            } else {
-                console.log(`[SAFE] ${cve.cve_id} - Installierte Version ist aktuell genug oder not-affected`);
-            }
-        } catch (error) {
-            console.error(`[ERROR] Versionsvergleich für ${cve.package_name} ${cve.cve_id}:`, error.message);
-            // Bei Fehler im Versionsvergleich: Nur als verwundbar markieren wenn Status 'open' ist
-            if (status === 'open') {
-                vulnerableList.push({
-                    ...cve,
-                    installed_version: installedVer,
-                    vulnerable_reason: `Fehler beim Versionsvergleich. Status: ${status}. (${error.message.substring(0, 50)}...)`
-                });
+                if (compareDebVersions(pkg.newVersion, cve.fixed_version) >= 0) {
+                    fixedByUpdate.push(entry);
+                } else {
+                    stillOpen.push(entry);
+                }
+            } catch (error) {
+                console.error(`[VULN-CHECK] Versionsvergleich fehlgeschlagen für ${pkg.packageName} ${cve.cve_id}:`, error.message);
             }
         }
+
+        if (fixedByUpdate.length === 0 && stillOpen.length === 0) continue;
+
+        const bySeverity = (a, b) =>
+            (CVE_SEVERITY_RANK[b.priority_level] ?? -1) - (CVE_SEVERITY_RANK[a.priority_level] ?? -1)
+            || b.cve_id.localeCompare(a.cve_id);
+        fixedByUpdate.sort(bySeverity);
+        stillOpen.sort(bySeverity);
+
+        result.push({
+            package_name: pkg.packageName,
+            source_name: pkg.sourceName,
+            installed_version: pkg.installedVersion,
+            new_version: pkg.newVersion,
+            // Höchste Stufe der CVEs, die das Update schließt (null = Update schließt keine CVE)
+            priority_level: fixedByUpdate.length > 0 ? fixedByUpdate[0].priority_level : null,
+            fixed_cves: fixedByUpdate,
+            open_cves: stillOpen
+        });
     }
 
-    console.log(`[VULN-CHECK] Fertig - ${vulnerableList.length} Schwachstellen gefunden`);
-    return vulnerableList;
+    console.log(`[VULN-CHECK] ${ip}: ${result.length} Pakete mit CVE-Bezug`);
+    return result;
 }
 
 
@@ -842,33 +841,50 @@ app.get('/api/vulnerableUpdates/:id', async (req, res) => {
 
     try {
         // 1. Hole Server-Details und Update-Liste
-        const serverQuery = await pool.query('SELECT server, sys, ul FROM zustand WHERE id = $1', [id]);
+        const serverQuery = await pool.query('SELECT server, sys, ul, src_map FROM zustand WHERE id = $1', [id]);
 
         if (serverQuery.rows.length === 0) {
             return res.status(404).json({ error: 'Server nicht gefunden.' });
         }
 
-        const { server, sys, ul } = serverQuery.rows[0];
+        const { server, sys, ul, src_map } = serverQuery.rows[0];
 
         // Extrahieren des Debian-Codenamen aus dem 'sys'-Feld (z.B. 'Debian GNU/Linux 11 (bullseye)')
         const matchDistro = sys.match(/\(([^)]+)\)/);
-const distroName = matchDistro ? matchDistro[1].toLowerCase() : null;
+        const distroName = matchDistro ? matchDistro[1].toLowerCase() : null;
 
-if (!distroName) {
-    return res.status(400).json({ error: 'Distributionsname konnte nicht extrahiert werden.' });
-}
+        if (!distroName) {
+            return res.status(400).json({ error: 'Distributionsname konnte nicht extrahiert werden.' });
+        }
 
-console.log(`[VULN-CHECK] Starte Analyse für ${server} (Distro: ${distroName})`);
+        let srcMap = {};
+        try {
+            srcMap = src_map ? JSON.parse(src_map) : {};
+        } catch (e) {
+            console.log(`[VULN-CHECK] Ungültige src_map für ${server}`);
+        }
 
-// 2. Führe die Versionsvergleichslogik durch
-const vulnerableList = await getVulnerableUpdates(server, distroName, ul);
+        // Stand der CVE-Datenbank und ob der Tracker diese Distribution noch abdeckt
+        const metaQuery = await pool.query(`
+            SELECT to_char(last_update AT TIME ZONE '${GLOBAL_TIMEZONE}', '${GLOBAL_DATE_FORMAT}') AS last_update, distros
+            FROM cve_meta WHERE id = 1
+        `).catch(() => ({ rows: [] }));
+        const meta = metaQuery.rows[0] || {};
 
-// 3. Ausgabe
-res.json({
-    success: true,
-    distroName: distroName,
-    vulnerabilities: vulnerableList
-});
+        console.log(`[VULN-CHECK] Starte Analyse für ${server} (Distro: ${distroName})`);
+
+        // 2. Führe die Versionsvergleichslogik durch
+        const vulnerableList = await getVulnerableUpdates(server, distroName, ul, srcMap);
+
+        // 3. Ausgabe
+        res.json({
+            success: true,
+            distroName: distroName,
+            cveLastUpdate: meta.last_update || null,
+            distroCovered: meta.distros ? meta.distros.includes(distroName) : null,
+            sourceMapAvailable: src_map != null,
+            vulnerabilities: vulnerableList
+        });
 
     } catch (error) {
         console.error('Fehler beim Abrufen der verwundbaren Updates:', error);
@@ -1331,7 +1347,13 @@ const server = app.listen(port, () => {
 
 const sshSessions = new Map(); // Speichert aktive SSH-Sessions
 
-function createSSHTerminal(socket, host, username, password) {
+// Begrenzt die vom Browser gemeldete Terminalgröße auf sinnvolle Werte
+function clampTerminalSize(value, fallback, max) {
+    const n = parseInt(value, 10);
+    return Number.isInteger(n) && n >= 10 && n <= max ? n : fallback;
+}
+
+function createSSHTerminal(socket, host, username, password, cols = 120, rows = 30) {
     console.log(`[SSH] Starte SSH-Session für ${username}@${host}`);
     
     // Nutze node-pty für echten PTY-Support
@@ -1349,8 +1371,8 @@ function createSSHTerminal(socket, host, username, password) {
         ],
         {
             name: 'xterm-256color',
-            cols: 120,
-            rows: 30,
+            cols: clampTerminalSize(cols, 120, 500),
+            rows: clampTerminalSize(rows, 30, 200),
             cwd: process.env.HOME,
             env: Object.assign({}, process.env, {
                 TERM: 'xterm-256color',
@@ -1435,7 +1457,7 @@ server.on('upgrade', (request, socket, head) => {
                     if (!passwordReceived && msg.type === 'auth') {
                         passwordReceived = true;
                         console.log(`[WS] Auth-Message für ${host}/${username}`);
-                        createSSHTerminal(ws, host, username, msg.password);
+                        createSSHTerminal(ws, host, username, msg.password, msg.cols, msg.rows);
                     } else if (passwordReceived && msg.type === 'input') {
                         const session = sshSessions.get(ws);
                         if (session && session.proc) {
@@ -1444,6 +1466,15 @@ server.on('upgrade', (request, socket, head) => {
                             session.proc.write(msg.data);
                         } else {
                             console.warn('[WS] Keine aktive Session für Input');
+                        }
+                    } else if (passwordReceived && msg.type === 'resize') {
+                        // Terminalgröße an das Browserfenster anpassen
+                        const session = sshSessions.get(ws);
+                        if (session && session.proc) {
+                            session.proc.resize(
+                                clampTerminalSize(msg.cols, 120, 500),
+                                clampTerminalSize(msg.rows, 30, 200)
+                            );
                         }
                     }
                 } catch (e) {
@@ -1466,4 +1497,3 @@ server.on('upgrade', (request, socket, head) => {
         });
     }
 });
-
